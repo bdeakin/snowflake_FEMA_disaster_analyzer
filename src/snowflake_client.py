@@ -17,13 +17,6 @@ def _debug_log(message: str, data: Dict[str, object], location: str, hypothesis_
         "data": data,
         "timestamp": int(pd.Timestamp.utcnow().timestamp() * 1000),
     }
-    # #region agent log
-    try:
-        with open(DEBUG_LOG_PATH, "a", encoding="utf-8") as log_file:
-            log_file.write(f"{pd.Series(payload).to_json()}\n")
-    except Exception:
-        pass
-    # #endregion agent log
 
 
 def _get_env(name: str, required: bool = True, default: Optional[str] = None) -> str:
@@ -68,60 +61,20 @@ def execute_scalar(sql: str, params: Optional[Iterable[Any]] = None) -> Any:
 
 def call_cortex_complete(prompt: str, model: str) -> str:
     sql = "SELECT snowflake.cortex.complete(%(model)s, %(prompt)s) AS response"
-    # #region agent log
-    _debug_log(
-        "cortex execute",
-        {"model": model, "prompt_length": len(prompt)},
-        "snowflake_client.py:call_cortex_complete",
-        "D",
-    )
-    # #endregion agent log
     try:
         result = execute_scalar(sql, params={"model": model, "prompt": prompt})
     except Exception as exc:
-        # #region agent log
-        _debug_log(
-            "cortex error",
-            {"error": str(exc)},
-            "snowflake_client.py:call_cortex_complete",
-            "D",
-        )
-        # #endregion agent log
         raise
     if result is None:
         raise RuntimeError("Cortex returned no response.")
-    # #region agent log
-    _debug_log(
-        "cortex response",
-        {"response_preview": str(result)[:200]},
-        "snowflake_client.py:call_cortex_complete",
-        "D",
-    )
-    # #endregion agent log
     return str(result)
 
 
 def describe_relation(relation_fqn: str, relation_type: str = "TABLE") -> pd.DataFrame:
     sql = f"DESC {relation_type} {relation_fqn}"
-    # #region agent log
-    _debug_log(
-        "describe_relation",
-        {"relation_fqn": relation_fqn, "relation_type": relation_type},
-        "snowflake_client.py:describe_relation",
-        "D",
-    )
-    # #endregion agent log
     try:
         return fetch_dataframe(sql)
     except Exception as exc:
-        # #region agent log
-        _debug_log(
-            "describe_relation error",
-            {"error": str(exc)},
-            "snowflake_client.py:describe_relation",
-            "D",
-        )
-        # #endregion agent log
         raise
 
 

@@ -108,3 +108,26 @@ To-do's from the plan have already been created. Do not create them again. Mark 
 50. "The map did render, but then after changing some of the filters the error reappeared."
 51. "The issue has been fixed. Please clean up the instrumentation."
 52. "Update the prompts.md file. Push the updates to git."
+
+53. "The application is now displaying circles on the map for incidents. Filtering appears to be working. However, there are several issues:
+
+1. The circles appear to be based on the 10 national FEMA region IDs, not the latitude/longitude of the actual disasters. The view should be updated to reflect the actual individual disasters, not aggregate them up to the FEMA region ID.
+2. The State dropdown is currently displaying values like “geoId/01” rather than actual state names. The View should be updated so that this dropdown shows actual US state names rather than identifiers.
+3. The Year Range can be defaulted to 2023-2025 rather than the beginning of time to help speed up load times.
+4. The Row Limit can be defaulted to 1000 to help speed up load times."
+54. "1. B. 2. A."
+55. "Implement the plan as specified, it is attached for your reference. Do NOT edit the plan file itself.
+
+To-do's from the plan have already been created. Do not create them again. Mark them as in_progress as you work, starting with the first one. Don't stop until you have completed all the to-dos."
+56. "When I run the application, I get this error: File "/Users/bdeakin/Documents/Vibe Coding/snowflake_FEMA_disaster_analyzer/app.py", line 120
+  def _build_in_clause(values: List[str], prefix: str) -> Tuple[str, Dict[str, str]]:
+  ^
+IndentationError: expected an indented block"
+57. "When I start the application, I get this error: File "/Users/bdeakin/Documents/Vibe Coding/snowflake_FEMA_disaster_analyzer/app.py", line 270
+      sql = (
+      ^
+IndentationError: expected an indented block"
+58. "Please eliminate the Zoom filter. It's unclear what it is doing."
+59. "When I select an incident type like 'Fire' the following error is displayed and the map does not render: Query failed: vars() argument must have dict attribute"
+60. "The functionality of displaying incident-based icons is not currently working. Let's remove it for the time being and see if that simplifies the development process. The error that I keep getting when attempting to open the application is the following: Query failed: vars() argument must have dict attribute"
+61. "Please update prompts.md and push all updates to git"
