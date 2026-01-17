@@ -1,2 +1,4 @@
 .env
 config/secrets.env
+
+.cursor/debug.log
