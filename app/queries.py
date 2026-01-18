@@ -155,3 +155,65 @@ def get_drilldown(
             "period_bucket": period_bucket,
         },
     )
+
+
+def get_disaster_type_bump_ranks(limit_per_decade: int = 10) -> QueryResult:
+    sql = """
+        WITH decade_counts AS (
+            SELECT
+              DATE_FROM_PARTS(
+                FLOOR(EXTRACT(year FROM disaster_declaration_date) / 10) * 10,
+                1,
+                1
+              ) AS period_decade,
+              disaster_type AS disaster_type,
+              COUNT(*) AS disaster_count
+            FROM ANALYTICS.SILVER.FCT_DISASTERS
+            WHERE disaster_declaration_date IS NOT NULL
+              AND disaster_type IS NOT NULL
+            GROUP BY
+              DATE_FROM_PARTS(
+                FLOOR(EXTRACT(year FROM disaster_declaration_date) / 10) * 10,
+                1,
+                1
+              ),
+              disaster_type
+        )
+        SELECT
+          period_decade,
+          disaster_type,
+          disaster_count,
+          DENSE_RANK() OVER (
+            PARTITION BY period_decade
+            ORDER BY disaster_count DESC, disaster_type
+          ) AS rank
+        FROM decade_counts
+        QUALIFY rank <= %(limit_per_decade)s
+        ORDER BY period_decade, rank, disaster_type
+    """
+    return fetch_df(sql, {"limit_per_decade": limit_per_decade})
+
+
+def get_bump_drilldown_state_summary(period_decade: str, disaster_type: str) -> QueryResult:
+    sql = """
+        SELECT
+          state AS state,
+          COUNT(*) AS disaster_count,
+          LISTAGG(
+            DISTINCT NULLIF(TRIM(declaration_name), ''),
+            ', '
+          ) WITHIN GROUP (ORDER BY NULLIF(TRIM(declaration_name), '')) AS specific_disasters
+        FROM ANALYTICS.SILVER.FCT_DISASTERS
+        WHERE disaster_type = %(disaster_type)s
+          AND DATE_FROM_PARTS(
+            FLOOR(EXTRACT(year FROM disaster_declaration_date) / 10) * 10,
+            1,
+            1
+          ) = %(period_decade)s
+        GROUP BY state
+        ORDER BY disaster_count DESC, state
+    """
+    return fetch_df(
+        sql,
+        {"period_decade": period_decade, "disaster_type": disaster_type},
+    )

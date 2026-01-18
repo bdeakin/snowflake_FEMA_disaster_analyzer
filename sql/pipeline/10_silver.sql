@@ -5,9 +5,16 @@ CREATE OR REPLACE DYNAMIC TABLE ANALYTICS.SILVER.FCT_DISASTERS
   TARGET_LAG = '1 hour'
   WAREHOUSE = COMPUTE_WH
 AS
+WITH state_lookup AS (
+  SELECT DISTINCT state_fips, state_abbr
+  FROM ANALYTICS.REF.COUNTY_CENTROIDS
+)
 SELECT
   d.disaster_id AS disaster_id,
-  c.state_abbr AS state,
+  COALESCE(
+    c.state_abbr,
+    s.state_abbr
+  ) AS state,
   a.fema_designated_area AS county_name,
   LPAD(REPLACE(a.county_geo_id, 'geoId/', ''), 5, '0') AS county_fips,
   c.centroid_lat AS centroid_lat,
@@ -25,4 +32,6 @@ JOIN SNOWFLAKE_PUBLIC_DATA_PAID.PUBLIC_DATA.FEMA_DISASTER_DECLARATION_AREAS_INDE
   ON d.disaster_id = a.disaster_id
 LEFT JOIN ANALYTICS.REF.COUNTY_CENTROIDS c
   ON LPAD(REPLACE(a.county_geo_id, 'geoId/', ''), 5, '0') = c.county_fips
+LEFT JOIN state_lookup s
+  ON LPAD(REPLACE(a.state_geo_id, 'geoId/', ''), 2, '0') = s.state_fips
 WHERE d.disaster_declaration_date IS NOT NULL;

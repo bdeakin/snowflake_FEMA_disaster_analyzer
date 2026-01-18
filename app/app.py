@@ -23,19 +23,24 @@ def _load_module(module_name: str, file_name: str):
 
 try:
     from queries import (
+        get_bump_drilldown_state_summary,
         get_cube_summary,
+        get_disaster_type_bump_ranks,
         get_distinct_disaster_types,
         get_drilldown,
         get_state_choropleth,
     )
-    from viz import build_choropleth, build_cube_grid, build_drilldown
+    from viz import build_bump_chart, build_choropleth, build_cube_grid, build_drilldown
 except ImportError:
     queries = _load_module("app_queries", "queries.py")
     viz = _load_module("app_viz", "viz.py")
+    get_bump_drilldown_state_summary = queries.get_bump_drilldown_state_summary
     get_cube_summary = queries.get_cube_summary
+    get_disaster_type_bump_ranks = queries.get_disaster_type_bump_ranks
     get_distinct_disaster_types = queries.get_distinct_disaster_types
     get_drilldown = queries.get_drilldown
     get_state_choropleth = queries.get_state_choropleth
+    build_bump_chart = viz.build_bump_chart
     build_choropleth = viz.build_choropleth
     build_cube_grid = viz.build_cube_grid
     build_drilldown = viz.build_drilldown
@@ -46,7 +51,9 @@ st.set_page_config(page_title="FEMA Disasters Explorer", layout="wide")
 st.title("FEMA Disasters Explorer")
 
 
-with st.container():
+explore_tab, bump_tab = st.tabs(["Explore", "Disaster Type Trends"])
+
+with explore_tab:
     st.sidebar.header("Filters")
     default_start = dt.date(2023, 1, 1)
     default_end = dt.date(2025, 12, 31)
@@ -155,3 +162,46 @@ with st.container():
             drilldown_fig = build_drilldown(drilldown_result.df, color_map=color_map)
             drilldown_fig.update_layout(margin={"r": 0, "t": 0, "l": 0, "b": 0})
             st.plotly_chart(drilldown_fig, use_container_width=True)
+
+with bump_tab:
+    st.subheader("Top Disaster Types by Decade (Top 5)")
+    bump_result = get_disaster_type_bump_ranks(limit_per_decade=5)
+    if bump_result.df.empty:
+        st.info("No bump chart data available.")
+    else:
+        bump_fig = build_bump_chart(bump_result.df)
+        bump_fig.update_layout(margin={"r": 0, "t": 20, "l": 0, "b": 0}, height=700)
+        bump_event = st.plotly_chart(
+            bump_fig,
+            use_container_width=True,
+            on_select="rerun",
+            selection_mode="points",
+        )
+
+        if bump_event and bump_event.selection and bump_event.selection.points:
+            point = bump_event.selection.points[0]
+            custom = point.get("customdata") or []
+            period_decade = custom[0] if len(custom) > 0 else None
+            disaster_type = custom[1] if len(custom) > 1 else point.get("legendgroup")
+            if hasattr(period_decade, "isoformat"):
+                period_decade = period_decade.isoformat()
+            st.session_state["bump_selected"] = {
+                "period_decade": period_decade,
+                "disaster_type": disaster_type,
+            }
+
+        selected_bump = st.session_state.get("bump_selected")
+        if selected_bump and selected_bump.get("period_decade") and selected_bump.get("disaster_type"):
+            st.subheader(
+                f"Drilldown: {selected_bump['disaster_type']} in {str(selected_bump['period_decade'])[:4]}s"
+            )
+            drilldown_summary = get_bump_drilldown_state_summary(
+                selected_bump["period_decade"],
+                selected_bump["disaster_type"],
+            )
+            if drilldown_summary.df.empty:
+                st.info("No drilldown data returned.")
+            else:
+                st.dataframe(drilldown_summary.df, use_container_width=True)
+        else:
+            st.caption("Select a point in the bump chart to view drilldown details.")

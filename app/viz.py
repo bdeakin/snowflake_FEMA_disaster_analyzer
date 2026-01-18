@@ -5,6 +5,7 @@ import math
 
 import pandas as pd
 import plotly.express as px
+import plotly.graph_objects as go
 
 
 def _jitter_pair(lat: float, lon: float, seed: str, scale: float = 0.06) -> tuple[float, float]:
@@ -79,4 +80,81 @@ def build_drilldown(df: pd.DataFrame, color_map: dict[str, str] | None = None):
         scope="usa",
     )
     fig.update_geos(fitbounds="locations")
+    return fig
+
+
+def build_bump_chart(df: pd.DataFrame):
+    if df.empty:
+        return go.Figure()
+    df = df.copy()
+    df["period_decade"] = pd.to_datetime(df["period_decade"])
+    df["decade_label"] = df["period_decade"].dt.strftime("%Y") + "s"
+    types = sorted(df["disaster_type"].dropna().unique().tolist())
+    palette = px.colors.qualitative.Safe + px.colors.qualitative.Plotly
+    color_map = {t: palette[i % len(palette)] for i, t in enumerate(types)}
+
+    fig = go.Figure()
+    for disaster_type, group in df.groupby("disaster_type"):
+        group = group.sort_values("period_decade")
+        labels = [f"#{int(r)}" for r in group["rank"].tolist()]
+        customdata = [
+            [d.strftime("%Y-%m-%d"), disaster_type]
+            for d in group["period_decade"].tolist()
+        ]
+        fig.add_trace(
+            go.Scatter(
+                x=group["period_decade"],
+                y=group["rank"],
+                mode="lines",
+                line={"color": color_map.get(disaster_type), "width": 2},
+                name=disaster_type,
+                customdata=customdata,
+                hoverinfo="skip",
+                showlegend=False,
+            )
+        )
+        fig.add_trace(
+            go.Scatter(
+                x=group["period_decade"],
+                y=group["rank"],
+                mode="markers+text",
+                text=labels,
+                textposition="middle center",
+                textfont={"color": "#ffffff"},
+                marker={
+                    "size": 26,
+                    "color": color_map.get(disaster_type),
+                    "line": {"width": 1, "color": "#333"},
+                },
+                name=disaster_type,
+                customdata=customdata,
+                hovertemplate=(
+                    "Disaster type: %{customdata[1]}<br>"
+                    "Decade: %{customdata[0]|%Y}s<br>"
+                    "Rank: %{y}<br>"
+                    "Count: %{customdata[2]}<extra></extra>"
+                ),
+                showlegend=True,
+            )
+        )
+
+    # Attach counts to hover customdata
+    for i, trace in enumerate(fig.data):
+        disaster_type = trace.name
+        group = df[df["disaster_type"] == disaster_type].sort_values("period_decade")
+        customdata = [
+            [d.strftime("%Y-%m-%d"), disaster_type, int(c)]
+            for d, c in zip(group["period_decade"].tolist(), group["disaster_count"].tolist())
+        ]
+        trace.customdata = customdata
+
+    fig.update_yaxes(
+        autorange="reversed",
+        title="Rank (1 = most frequent)",
+        tickmode="linear",
+        tick0=1,
+        dtick=1,
+    )
+    fig.update_xaxes(title="Decade", tickformat="%Y", ticklabelmode="period")
+    fig.update_layout(legend_title_text="Disaster type")
     return fig
