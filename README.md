@@ -1,6 +1,6 @@
 # FEMA Disaster Analyzer (Snowflake + Streamlit)
 
-This app connects to the FEMA disaster declarations dataset in Snowflake, renders results on a US map with Plotly, and supports natural-language queries via Snowflake Cortex.
+This app connects to the FEMA disaster declarations dataset in Snowflake, renders results on a US map with Plotly, and supports a Mapbox-based map view.
 
 ## Setup
 
@@ -22,6 +22,12 @@ cp config/env.example config/secrets.env
    - `FEMA_TABLE` or `FEMA_TABLE_FQN`
    - `FEMA_COL_STATE`, `FEMA_COL_INCIDENT_TYPE`, `FEMA_COL_DECLARATION_DATE`
    - `FEMA_COL_LATITUDE`, `FEMA_COL_LONGITUDE`, `FEMA_COL_DISASTER_ID`
+
+4. Provide a Mapbox token for the map view:
+   - `MAPBOX_ACCESS_TOKEN` in `config/secrets.env`
+5. Optional OCSP fallback (use only if your environment blocks OCSP checks):
+   - `SNOWFLAKE_OCSP_FAIL_OPEN=true` in `config/secrets.env`
+   - If the error persists, try `SNOWFLAKE_DISABLE_OCSP_CHECKS=true`
 
 ## Unified FEMA View
 

@@ -1,17 +1,15 @@
+import json
 import os
+import time
 from typing import Dict, List, Tuple
 
 import pandas as pd
 import streamlit as st
 import plotly.express as px
+from streamlit_plotly_events import plotly_events
 from dotenv import load_dotenv
 
-from src.snowflake_client import (
-    call_cortex_complete,
-    describe_relation,
-    fetch_dataframe,
-    show_views_in_schema,
-)
+from src.snowflake_client import fetch_dataframe, fetch_dataframe_plain
 
 
 load_dotenv(dotenv_path=os.path.join("config", "secrets.env"))
@@ -37,6 +35,11 @@ def _debug_log(message: str, data: Dict[str, object], location: str, hypothesis_
         "data": data,
         "timestamp": int(pd.Timestamp.utcnow().timestamp() * 1000),
     }
+    try:
+        with open(DEBUG_LOG_PATH, "a", encoding="utf-8") as log_file:
+            log_file.write(json.dumps(payload) + "\n")
+    except Exception:
+        pass
 
 
 def _get_env(name: str, default: str = "") -> str:
@@ -68,54 +71,7 @@ def _get_database_schema() -> Tuple[str, str]:
     return db, schema
 
 
-@st.cache_data(ttl=300)
-def load_view_options() -> List[str]:
-    db, schema = _get_database_schema()
-    views = show_views_in_schema(db, schema)
-    if "NAME" in views.columns:
-        names = views["NAME"].astype(str).tolist()
-    elif "name" in views.columns:
-        names = views["name"].astype(str).tolist()
-    else:
-        return []
-    fema_names = sorted([name for name in names if name.startswith("FEMA_")])
-    return fema_names if fema_names else sorted(names)
-    return []
-
-
-def _relation_columns(table_fqn: str) -> List[str]:
-    db, schema = _get_database_schema()
-    table = table_fqn.split(".")[-1]
-    sql = (
-        "SELECT COLUMN_NAME AS name "
-        "FROM INFORMATION_SCHEMA.COLUMNS "
-        "WHERE TABLE_CATALOG = %(db)s AND TABLE_SCHEMA = %(schema)s AND TABLE_NAME = %(table)s "
-        "ORDER BY ORDINAL_POSITION"
-    )
-    df = fetch_dataframe(sql, params={"db": db, "schema": schema, "table": table})
-    return df["NAME"].astype(str).tolist()
-
-
-def _col(name: str, default: str) -> str:
-    return _get_env(name, default)
-
-def _relation_type() -> str:
-    return _get_env("FEMA_RELATION_TYPE", "VIEW").upper()
-
-
 TABLE_FQN = _table_fqn()
-COL_STATE = _col("FEMA_COL_STATE", "STATE")
-COL_INCIDENT_TYPE = _col("FEMA_COL_INCIDENT_TYPE", "INCIDENT_TYPE")
-COL_DECLARATION_DATE = _col("FEMA_COL_DECLARATION_DATE", "DECLARATION_DATE")
-COL_LAT = _col("FEMA_COL_LATITUDE", "LATITUDE")
-COL_LON = _col("FEMA_COL_LONGITUDE", "LONGITUDE")
-COL_DISASTER_ID = _col("FEMA_COL_DISASTER_ID", "FEMA_DECLARATION_ID")
-
-
-try:
-    relation_columns = _relation_columns(TABLE_FQN)
-except Exception as exc:
-    relation_columns = []
 
 
 def _build_in_clause(values: List[str], prefix: str) -> Tuple[str, Dict[str, str]]:
@@ -163,88 +119,6 @@ def load_incident_options(table_fqn: str) -> List[str]:
 
 
 @st.cache_data(ttl=300)
-def resolve_date_column(table_fqn: str) -> str:
-    relation_columns = _relation_columns(table_fqn)
-    candidates = [
-        COL_DECLARATION_DATE,
-        "DISASTER_DECLARATION_DATE",
-        "DECLARATION_DATE",
-        "DISASTER_BEGIN_DATE",
-        "DISASTER_END_DATE",
-        "DESIGNATED_DATE",
-        "REQUESTED_DATE",
-        "OBLIGATION_DATE",
-        "DATE_OF_LOSS",
-        "ENTRY_DATE",
-        "UPDATE_DATE",
-    ]
-    for candidate in candidates:
-        if candidate in relation_columns:
-            return candidate
-    return ""
-
-
-@st.cache_data(ttl=300)
-def resolve_state_column(table_fqn: str) -> str:
-    relation_columns = _relation_columns(table_fqn)
-    candidates = [
-        COL_STATE,
-        "STATE",
-        "STATE_GEO_ID",
-        "STATE_CODE",
-        "STATE_ABBR",
-        "STATE_ABBREVIATION",
-    ]
-    for candidate in candidates:
-        if candidate in relation_columns:
-            return candidate
-    return ""
-
-
-@st.cache_data(ttl=300)
-def resolve_incident_column(table_fqn: str) -> str:
-    relation_columns = _relation_columns(table_fqn)
-    candidates = [
-        COL_INCIDENT_TYPE,
-        "INCIDENT_TYPE",
-        "DISASTER_TYPE",
-        "MISSION_ASSIGNMENT_TYPE",
-        "FLOOD_TYPE",
-    ]
-    for candidate in candidates:
-        if candidate in relation_columns:
-            return candidate
-    return ""
-
-
-@st.cache_data(ttl=300)
-def resolve_disaster_id_column(table_fqn: str) -> str:
-    relation_columns = _relation_columns(table_fqn)
-    candidates = [
-        COL_DISASTER_ID,
-        "FEMA_DISASTER_DECLARATION_ID",
-        "DISASTER_ID",
-        "DISASTER_DECLARATION_RECORD_ID",
-        "FEMA_RECORD_ID",
-        "MISSION_ASSIGNMENT_ID",
-        "NATIONAL_FLOOD_INSURANCE_PROGRAM_CLAIM_ID",
-    ]
-    for candidate in candidates:
-        if candidate in relation_columns:
-            return candidate
-    return ""
-
-
-@st.cache_data(ttl=300)
-def resolve_lat_lon_columns(table_fqn: str) -> Tuple[str, str]:
-    relation_columns = _relation_columns(table_fqn)
-    lat_candidates = [COL_LAT, "LATITUDE", "LAT", "LAT_DECIMAL", "LATITUDE_DECIMAL"]
-    lon_candidates = [COL_LON, "LONGITUDE", "LON", "LNG", "LONG", "LONG_DECIMAL", "LONGITUDE_DECIMAL"]
-    lat = next((c for c in lat_candidates if c in relation_columns), "")
-    lon = next((c for c in lon_candidates if c in relation_columns), "")
-    return lat, lon
-
-@st.cache_data(ttl=300)
 def load_year_bounds(table_fqn: str) -> Tuple[int, int]:
     date_column = "DISASTER_DECLARATION_DATE"
     try:
@@ -289,6 +163,7 @@ def build_filtered_query(
     incidents: List[str],
     year_range: Tuple[int, int],
     limit_rows: int,
+    bounds: Tuple[float, float, float, float] = None,
 ) -> Tuple[str, Dict[str, str]]:
     where_clauses = []
     params: Dict[str, str] = {}
@@ -314,6 +189,18 @@ def build_filtered_query(
         )
         params["min_year"] = str(year_range[0])
         params["max_year"] = str(year_range[1])
+    if bounds:
+        min_lat, max_lat, min_lon, max_lon = bounds
+        where_clauses.append(
+            "COALESCE(COUNTY_LATITUDE, REGION_LATITUDE) BETWEEN %(min_lat)s AND %(max_lat)s"
+        )
+        where_clauses.append(
+            "COALESCE(COUNTY_LONGITUDE, REGION_LONGITUDE) BETWEEN %(min_lon)s AND %(max_lon)s"
+        )
+        params["min_lat"] = float(min_lat)
+        params["max_lat"] = float(max_lat)
+        params["min_lon"] = float(min_lon)
+        params["max_lon"] = float(max_lon)
 
     where_sql = " AND ".join(where_clauses) if where_clauses else "1=1"
     sql = (
@@ -322,30 +209,40 @@ def build_filtered_query(
         f"{incident_column if incident_column else 'NULL'} AS incident_type, "
         f"{date_column if date_column else 'NULL'} AS declaration_date, "
         f"{disaster_id_column if disaster_id_column else 'NULL'} AS disaster_id, "
-        f"{lat_column if lat_column else 'NULL'} AS latitude, "
-        f"{lon_column if lon_column else 'NULL'} AS longitude "
+        f"DISASTER_DECLARATION_NAME AS disaster_declaration_name, "
+        f"DISASTER_DECLARATION_TYPE AS disaster_declaration_type, "
+        f"FEMA_REGION_NAME AS fema_region_name, "
+        f"DESIGNATED_AREAS AS designated_areas, "
+        f"DECLARED_PROGRAMS AS declared_programs, "
+        f"FEMA_DISASTER_DECLARATION_ID AS fema_disaster_declaration_id, "
+        f"DISASTER_BEGIN_DATE AS disaster_begin_date, "
+        f"DISASTER_END_DATE AS disaster_end_date, "
+        f"STATE_GEO_ID AS state_geo_id, "
+        f"COUNTY_GEO_ID AS county_geo_id, "
+        f"COALESCE({lat_column}, REGION_LATITUDE) AS latitude, "
+        f"COALESCE({lon_column}, REGION_LONGITUDE) AS longitude "
         f"FROM {table_fqn} WHERE {where_sql} "
         f"LIMIT {int(limit_rows)}"
     )
     return sql, params
 
 
-def build_aggregate_query(
+def build_agg_query(
     table_fqn: str,
     states: List[str],
     incidents: List[str],
     year_range: Tuple[int, int],
     limit_rows: int,
+    grid_large_degrees: float,
+    grid_small_degrees: float,
+    metro_threshold: int,
+    bounds: Tuple[float, float, float, float] = None,
 ) -> Tuple[str, Dict[str, str]]:
     where_clauses = []
     params: Dict[str, str] = {}
     state_column = "STATE_GEO_ID"
     incident_column = "INCIDENT_TYPE"
-    date_column = "DISASTER_DECLARATION_DATE"
-    disaster_id_column = "DISASTER_ID"
-    lat_column = "COUNTY_LATITUDE"
-    lon_column = "COUNTY_LONGITUDE"
-
+    year_column = "DISASTER_YEAR"
     if states and state_column:
         clause, clause_params = _build_in_clause(states, "state")
         where_clauses.append(f"{state_column} IN {clause}")
@@ -354,27 +251,165 @@ def build_aggregate_query(
         clause, clause_params = _build_in_clause(incidents, "incident")
         where_clauses.append(f"{incident_column} IN {clause}")
         params.update(clause_params)
-    if date_column and year_range != (0, 0):
-        where_clauses.append(
-            f"YEAR(TO_DATE({date_column})) BETWEEN %(min_year)s AND %(max_year)s"
-        )
+    if year_range != (0, 0):
+        where_clauses.append(f"{year_column} BETWEEN %(min_year)s AND %(max_year)s")
         params["min_year"] = str(year_range[0])
         params["max_year"] = str(year_range[1])
-
+    if bounds:
+        min_lat, max_lat, min_lon, max_lon = bounds
+        where_clauses.append("AVG_LATITUDE BETWEEN %(min_lat)s AND %(max_lat)s")
+        where_clauses.append("AVG_LONGITUDE BETWEEN %(min_lon)s AND %(max_lon)s")
+        params["min_lat"] = float(min_lat)
+        params["max_lat"] = float(max_lat)
+        params["min_lon"] = float(min_lon)
+        params["max_lon"] = float(max_lon)
     where_sql = " AND ".join(where_clauses) if where_clauses else "1=1"
-    sql = (
-        "SELECT "
-        f"{lat_column} AS latitude, "
-        f"{lon_column} AS longitude, "
-        f"COUNT(DISTINCT {disaster_id_column}) AS count "
-        f"FROM {table_fqn} WHERE {where_sql} "
-        f"GROUP BY {lat_column}, {lon_column} "
-        f"LIMIT {int(limit_rows)}"
-    )
+    sql = f"""
+WITH base AS (
+    SELECT
+        AVG_LATITUDE AS lat,
+        AVG_LONGITUDE AS lon,
+        DISASTER_COUNT AS count
+    FROM {table_fqn}
+    WHERE {where_sql}
+),
+large AS (
+    SELECT
+        ROUND(lat / {grid_large_degrees}) * {grid_large_degrees} AS lat_l,
+        ROUND(lon / {grid_large_degrees}) * {grid_large_degrees} AS lon_l,
+        SUM(count) AS count_l
+    FROM base
+    GROUP BY lat_l, lon_l
+),
+small AS (
+    SELECT
+        ROUND(lat / {grid_small_degrees}) * {grid_small_degrees} AS lat_s,
+        ROUND(lon / {grid_small_degrees}) * {grid_small_degrees} AS lon_s,
+        ROUND(lat / {grid_large_degrees}) * {grid_large_degrees} AS lat_l,
+        ROUND(lon / {grid_large_degrees}) * {grid_large_degrees} AS lon_l,
+        SUM(count) AS count_s
+    FROM base
+    GROUP BY lat_s, lon_s, lat_l, lon_l
+)
+SELECT lat_l AS latitude, lon_l AS longitude, count_l AS count,
+       'large' AS grid_level, {grid_large_degrees} AS grid_size
+FROM large
+WHERE count_l >= {metro_threshold}
+UNION ALL
+SELECT s.lat_s AS latitude, s.lon_s AS longitude, s.count_s AS count,
+       'small' AS grid_level, {grid_small_degrees} AS grid_size
+FROM small s
+JOIN large l ON s.lat_l = l.lat_l AND s.lon_l = l.lon_l
+WHERE l.count_l < {metro_threshold}
+LIMIT {int(limit_rows)}
+"""
     return sql, params
 
 
-def render_map(df: pd.DataFrame, zoom_level: float) -> None:
+def build_hover_query(
+    table_fqn: str,
+    states: List[str],
+    incidents: List[str],
+    year_range: Tuple[int, int],
+    bounds: Tuple[float, float, float, float],
+    grid_large_degrees: float,
+    grid_small_degrees: float,
+    metro_threshold: int,
+) -> Tuple[str, Dict[str, str]]:
+    where_clauses = []
+    params: Dict[str, str] = {}
+    if states:
+        clause, clause_params = _build_in_clause(states, "state")
+        where_clauses.append(f"STATE_GEO_ID IN {clause}")
+        params.update(clause_params)
+    if incidents:
+        clause, clause_params = _build_in_clause(incidents, "incident")
+        where_clauses.append(f"INCIDENT_TYPE IN {clause}")
+        params.update(clause_params)
+    if year_range != (0, 0):
+        where_clauses.append(
+            "YEAR(TO_DATE(DISASTER_DECLARATION_DATE)) BETWEEN %(min_year)s AND %(max_year)s"
+        )
+        params["min_year"] = str(year_range[0])
+        params["max_year"] = str(year_range[1])
+    if bounds:
+        min_lat, max_lat, min_lon, max_lon = bounds
+        where_clauses.append(
+            "COALESCE(COUNTY_LATITUDE, REGION_LATITUDE) BETWEEN %(min_lat)s AND %(max_lat)s"
+        )
+        where_clauses.append(
+            "COALESCE(COUNTY_LONGITUDE, REGION_LONGITUDE) BETWEEN %(min_lon)s AND %(max_lon)s"
+        )
+        params["min_lat"] = float(min_lat)
+        params["max_lat"] = float(max_lat)
+        params["min_lon"] = float(min_lon)
+        params["max_lon"] = float(max_lon)
+    where_sql = " AND ".join(where_clauses) if where_clauses else "1=1"
+    sql = f"""
+WITH detail AS (
+    SELECT
+        COALESCE(COUNTY_LATITUDE, REGION_LATITUDE) AS lat,
+        COALESCE(COUNTY_LONGITUDE, REGION_LONGITUDE) AS lon,
+        INCIDENT_TYPE,
+        DISASTER_DECLARATION_NAME
+    FROM {table_fqn}
+    WHERE {where_sql}
+),
+large AS (
+    SELECT
+        ROUND(lat / {grid_large_degrees}) * {grid_large_degrees} AS lat_l,
+        ROUND(lon / {grid_large_degrees}) * {grid_large_degrees} AS lon_l,
+        COUNT(*) AS cnt
+    FROM detail
+    GROUP BY lat_l, lon_l
+),
+assigned AS (
+    SELECT
+        CASE WHEN l.cnt >= {metro_threshold} THEN l.lat_l ELSE ROUND(d.lat / {grid_small_degrees}) * {grid_small_degrees} END AS clat,
+        CASE WHEN l.cnt >= {metro_threshold} THEN l.lon_l ELSE ROUND(d.lon / {grid_small_degrees}) * {grid_small_degrees} END AS clon,
+        d.INCIDENT_TYPE,
+        d.DISASTER_DECLARATION_NAME
+    FROM detail d
+    JOIN large l
+      ON ROUND(d.lat / {grid_large_degrees}) * {grid_large_degrees} = l.lat_l
+     AND ROUND(d.lon / {grid_large_degrees}) * {grid_large_degrees} = l.lon_l
+),
+incident_counts AS (
+    SELECT clat, clon, INCIDENT_TYPE, COUNT(*) AS cnt
+    FROM assigned
+    GROUP BY clat, clon, INCIDENT_TYPE
+),
+incident_summary AS (
+    SELECT
+        clat,
+        clon,
+        LISTAGG(INCIDENT_TYPE || ': ' || cnt, ', ') WITHIN GROUP (ORDER BY cnt DESC) AS incident_summary,
+        SUM(cnt) AS total_count
+    FROM incident_counts
+    GROUP BY clat, clon
+),
+names AS (
+    SELECT
+        clat,
+        clon,
+        LISTAGG(DISTINCT DISASTER_DECLARATION_NAME, ', ') WITHIN GROUP (ORDER BY DISASTER_DECLARATION_NAME) AS name_summary,
+        COUNT(DISTINCT DISASTER_DECLARATION_NAME) AS name_count
+    FROM assigned
+    GROUP BY clat, clon
+)
+SELECT
+    i.clat AS latitude,
+    i.clon AS longitude,
+    i.incident_summary,
+    CASE WHEN i.total_count < 5 THEN n.name_summary ELSE NULL END AS name_summary,
+    i.total_count AS count
+FROM incident_summary i
+LEFT JOIN names n ON i.clat = n.clat AND i.clon = n.clon
+"""
+    return sql, params
+
+
+def build_map_figure(df: pd.DataFrame, is_agg: bool) -> px.scatter_mapbox:
     df = df.copy()
     if "latitude" in df.columns:
         df["latitude"] = pd.to_numeric(df["latitude"], errors="coerce")
@@ -388,22 +423,42 @@ def render_map(df: pd.DataFrame, zoom_level: float) -> None:
         st.info("No records returned for the selected filters.")
         return
 
-    if "count" in df.columns:
-        fig = px.scatter_geo(
+    mapbox_token = _get_env("MAPBOX_ACCESS_TOKEN", "").strip()
+    mapbox_style = "open-street-map"
+    if mapbox_token:
+        px.set_mapbox_access_token(mapbox_token)
+
+    center_lat = float(df["latitude"].mean()) if "latitude" in df.columns else 37.8
+    center_lon = float(df["longitude"].mean()) if "longitude" in df.columns else -96.0
+    if pd.isna(center_lat) or pd.isna(center_lon):
+        center_lat, center_lon = 37.8, -96.0
+
+    if is_agg:
+        fig = px.scatter_mapbox(
             df,
             lat="latitude",
             lon="longitude",
             size="count",
-            size_max=20,
-            projection="albers usa",
-            hover_data={"count": True, "latitude": True, "longitude": True},
+            size_max=40,
+            zoom=3,
+            center={"lat": center_lat, "lon": center_lon},
+            height=600,
+            color="count",
+            color_continuous_scale=["#9a9a9a", "#ff0000"],
+            hover_data={
+                "count": True,
+                "incident_summary": True,
+                "name_summary": True,
+            },
         )
     else:
-        fig = px.scatter_geo(
+        fig = px.scatter_mapbox(
             df,
             lat="latitude",
             lon="longitude",
-            projection="albers usa",
+            zoom=3,
+            center={"lat": center_lat, "lon": center_lon},
+            height=600,
             hover_data={
                 "incident_type": True,
                 "disaster_id": True,
@@ -411,10 +466,12 @@ def render_map(df: pd.DataFrame, zoom_level: float) -> None:
                 "state": True,
             },
         )
-        fig.update_traces(marker=dict(size=6, color="rgb(55,126,184)", opacity=0.7))
+        fig.update_traces(
+            marker=dict(size=8, color="rgba(55,126,184,0.6)"),
+        )
 
-    fig.update_layout(margin=dict(l=0, r=0, t=0, b=0))
-    st.plotly_chart(fig, use_container_width=True)
+    fig.update_layout(mapbox_style=mapbox_style, margin=dict(l=0, r=0, t=0, b=0))
+    return fig
 
 
 def validate_generated_sql(sql: str, table_fqn: str, limit_rows: int) -> str:
@@ -435,12 +492,56 @@ def validate_generated_sql(sql: str, table_fqn: str, limit_rows: int) -> str:
     return cleaned
 
 
+def _extract_bounds(relayout: Dict[str, object]) -> Tuple[float, float, float, float]:
+    coords = None
+    if "mapbox._derived.coordinates" in relayout:
+        coords = relayout.get("mapbox._derived.coordinates")
+    elif isinstance(relayout.get("mapbox._derived"), dict):
+        coords = relayout.get("mapbox._derived", {}).get("coordinates")
+    if not coords:
+        return None
+    lats = [pt[1] for pt in coords]
+    lons = [pt[0] for pt in coords]
+    return (min(lats), max(lats), min(lons), max(lons))
+
+
+def _cluster_bounds(latitude: float, longitude: float, grid_size: float) -> Tuple[float, float, float, float]:
+    half = grid_size / 2.0
+    return (latitude - half, latitude + half, longitude - half, longitude + half)
+
+
+def _extract_click(events: object, df: pd.DataFrame) -> Dict[str, float]:
+    if not events or df.empty:
+        return None
+    event_list = events if isinstance(events, list) else [events]
+    for event in event_list:
+        if not isinstance(event, dict):
+            continue
+        if "pointIndex" in event:
+            idx = event.get("pointIndex")
+        elif "pointNumber" in event:
+            idx = event.get("pointNumber")
+        else:
+            continue
+        try:
+            row = df.iloc[int(idx)]
+        except Exception:
+            continue
+        grid_size = row.get("grid_size") if "grid_size" in row else None
+        return {
+            "latitude": float(row.get("latitude", event.get("lat", 0.0))),
+            "longitude": float(row.get("longitude", event.get("lon", 0.0))),
+            "grid_size": float(grid_size) if grid_size else 0.0,
+            "count": int(row.get("count", 0)),
+        }
+    return None
+
+
 st.title("FEMA Disaster Analyzer")
 
 with st.sidebar:
     st.header("Filters")
-    limit_default = int(_get_env("FEMA_QUERY_LIMIT", "1000"))
-    limit_rows = st.slider("Row limit", min_value=100, max_value=20000, value=limit_default)
+    limit_rows = 1000
     try:
         min_year, max_year = load_year_bounds(TABLE_FQN)
     except Exception as exc:
@@ -450,7 +551,7 @@ with st.sidebar:
         st.warning("No date column found for this view. Year filter disabled.")
         year_range = (0, 0)
     else:
-        default_low = max(min_year, 2023)
+        default_low = max(min_year, 2000)
         default_high = min(max_year, 2025)
         if default_low > default_high:
             default_low, default_high = min_year, max_year
@@ -472,46 +573,190 @@ with st.sidebar:
     incidents = st.multiselect("Incident type", options=incident_options)
 
 st.subheader("Map")
+use_agg = True
+render_status = st.progress(0, text="Preparing query...")
+query_start = time.time()
 try:
     state_ids = [state_name_to_id[name] for name in states if name in state_name_to_id]
-    zoom_level = 6.0
-    sql, params = build_filtered_query(TABLE_FQN, state_ids, incidents, year_range, limit_rows)
-    df = fetch_dataframe(sql, params=params)
+    bounds = st.session_state.get("map_bounds", (24.0, 50.0, -125.0, -66.0))
+    grid_large_degrees = 3.6
+    grid_small_degrees = 1.45
+    metro_threshold = 50
+    filters_key = (tuple(state_ids), tuple(incidents), year_range)
+    if st.session_state.get("filters_key") != filters_key:
+        st.session_state["filters_key"] = filters_key
+        st.session_state.pop("selected_cluster", None)
+        st.session_state.pop("cluster_detail_df", None)
+    # #region agent log
+    _debug_log(
+        "map query prep",
+        {
+            "table_fqn": TABLE_FQN,
+            "bounds": bounds,
+            "state_ids_count": len(state_ids),
+            "incident_count": len(incidents),
+            "year_range": year_range,
+            "switching_disabled": True,
+        },
+        "app.py:map",
+        "OCSP1",
+    )
+    # #endregion agent log
+    view_label = "Aggregated"
+    st.caption("View mode: Aggregated (click a cluster for details)")
+    render_status.progress(40, text="Loading aggregated data...")
+    agg_sql, agg_params = build_agg_query(
+        "FEMA_ANALYTICS.PUBLIC.FEMA_DISASTER_AGG_VIEW",
+        state_ids,
+        incidents,
+        year_range,
+        20000,
+        grid_large_degrees,
+        grid_small_degrees,
+        metro_threshold,
+        bounds=bounds,
+    )
+    df = fetch_dataframe_plain(agg_sql, params=agg_params)
+    hover_sql, hover_params = build_hover_query(
+        TABLE_FQN,
+        state_ids,
+        incidents,
+        year_range,
+        bounds,
+        grid_large_degrees,
+        grid_small_degrees,
+        metro_threshold,
+    )
+    hover_df = fetch_dataframe_plain(hover_sql, params=hover_params)
     df.columns = [str(col).lower() for col in df.columns]
+    if not hover_df.empty:
+        hover_df.columns = [str(col).lower() for col in hover_df.columns]
+        df = df.merge(hover_df, on=["latitude", "longitude", "count"], how="left")
     if df.empty:
         st.info("No records returned for the selected filters.")
     else:
-        render_map(df, zoom_level)
+        render_status.progress(75, text="Rendering map...")
+        df = df.reset_index(drop=True)
+        fig = build_map_figure(df, use_agg)
+        events = None
+        try:
+            events = plotly_events(
+                fig,
+                click_event=True,
+                hover_event=False,
+                select_event=False,
+                override_height=600,
+                override_width="100%",
+                key="mapbox-plot",
+                relayout_event=True,
+            )
+        except TypeError:
+            events = plotly_events(
+                fig,
+                click_event=True,
+                hover_event=False,
+                select_event=False,
+                override_height=600,
+                override_width="100%",
+                key="mapbox-plot",
+            )
+        if events:
+            relayout = None
+            if isinstance(events, dict) and "relayoutData" in events:
+                relayout = events["relayoutData"]
+            elif isinstance(events, list):
+                for event in events:
+                    if isinstance(event, dict) and "relayoutData" in event:
+                        relayout = event["relayoutData"]
+                        break
+            if relayout:
+                bounds_from_event = _extract_bounds(relayout)
+                if bounds_from_event:
+                    st.session_state["map_bounds"] = bounds_from_event
+            clicked = _extract_click(events, df)
+            if clicked:
+                if not clicked.get("grid_size"):
+                    clicked["grid_size"] = grid_small_degrees
+                if clicked != st.session_state.get("selected_cluster"):
+                    st.session_state["selected_cluster"] = clicked
+                    st.session_state["cluster_detail_df"] = None
+        if st.session_state.get("selected_cluster") and st.session_state.get("cluster_detail_df") is None:
+            render_status.progress(90, text="Loading cluster details...")
+            selected = st.session_state["selected_cluster"]
+            cluster_bounds = _cluster_bounds(
+                selected["latitude"], selected["longitude"], selected["grid_size"]
+            )
+            detail_sql, detail_params = build_filtered_query(
+                TABLE_FQN,
+                state_ids,
+                incidents,
+                year_range,
+                500,
+                bounds=cluster_bounds,
+            )
+            detail_df = fetch_dataframe_plain(detail_sql, params=detail_params)
+            detail_df.columns = [str(col).lower() for col in detail_df.columns]
+            st.session_state["cluster_detail_df"] = detail_df
+    render_status.progress(100, text="Render complete.")
 except Exception as exc:
-    st.error(f"Query failed: {exc}")
+    if "certificate is revoked" in str(exc).lower():
+        st.error(
+            "Query failed due to OCSP certificate validation. "
+            "Set SNOWFLAKE_OCSP_FAIL_OPEN=true in config/secrets.env. "
+            "If it still fails, set SNOWFLAKE_DISABLE_OCSP_CHECKS=true "
+            "and restart the app."
+        )
+    else:
+        st.error(f"Query failed: {exc}")
     st.stop()
+finally:
+    elapsed = time.time() - query_start
+    st.caption(f"Query time: {elapsed:.2f}s")
 
 with st.expander("Data Preview", expanded=False):
-    st.dataframe(df.head(100))
+    if use_agg:
+        detail_df = st.session_state.get("cluster_detail_df")
+        if detail_df is None:
+            st.info("Click a cluster to load detailed records for that area.")
+        elif detail_df.empty:
+            st.info("No detailed records found for the selected cluster.")
+        else:
+            preview_columns = [
+                "state_name",
+                "incident_type",
+                "disaster_declaration_name",
+                "disaster_declaration_type",
+                "fema_region_name",
+                "designated_areas",
+                "declared_programs",
+                "fema_disaster_declaration_id",
+                "disaster_begin_date",
+                "disaster_end_date",
+                "state_geo_id",
+                "county_geo_id",
+                "disaster_id",
+                "disaster_declaration_date",
+            ]
+            available = [col for col in preview_columns if col in detail_df.columns]
+            st.dataframe(detail_df[available].head(100))
+    else:
+        preview_columns = [
+            "state_name",
+            "incident_type",
+            "disaster_declaration_name",
+            "disaster_declaration_type",
+            "fema_region_name",
+            "designated_areas",
+            "declared_programs",
+            "fema_disaster_declaration_id",
+            "disaster_begin_date",
+            "disaster_end_date",
+            "state_geo_id",
+            "county_geo_id",
+            "disaster_id",
+            "disaster_declaration_date",
+        ]
+        available = [col for col in preview_columns if col in df.columns]
+        st.dataframe(df[available].head(100))
 
 
-st.subheader("Ask in Natural Language (Cortex)")
-nl_question = st.text_input("Ask a question about the FEMA data", value="")
-show_sql = st.checkbox("Show generated SQL", value=True)
-
-if nl_question:
-    cortex_model = _get_env("SNOWFLAKE_CORTEX_MODEL", "snowflake-arctic")
-    try:
-        relation_type = _relation_type()
-        schema_info = describe_relation(TABLE_FQN, relation_type)
-        columns = ", ".join(schema_info["name"].astype(str).tolist())
-        prompt = (
-            "You are a helpful data assistant. Write a single SELECT SQL query for Snowflake.\n"
-            f"Use only the table {TABLE_FQN}.\n"
-            f"Available columns: {columns}.\n"
-            f"Question: {nl_question}\n"
-            "Return only SQL, no commentary."
-        )
-        raw_sql = call_cortex_complete(prompt=prompt, model=cortex_model)
-        generated_sql = validate_generated_sql(raw_sql, TABLE_FQN, limit_rows)
-        if show_sql:
-            st.code(generated_sql)
-        nl_df = fetch_dataframe(generated_sql)
-        st.dataframe(nl_df)
-    except Exception as exc:
-        st.error(f"Cortex query failed: {exc}")
