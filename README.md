@@ -29,6 +29,7 @@ Required variables:
 Optional (use for OCSP/certificate issues):
 - `SNOWFLAKE_OCSP_FAIL_OPEN` (true/false)
 - `SNOWFLAKE_DISABLE_OCSP_CHECKS` (true/false)
+Note: OCSP errors were resolved by upgrading `snowflake-connector-python` to the version pinned in `requirements.txt`.
 
 ## Setup Runbook
 1. Install deps:

@@ -520,3 +520,10 @@ Format:
   outcome: Implemented filters and cube heatmap with square markers
   next: User validation
 
+- timestamp: 2026-01-18 10:30
+  goal: Add NLQ pane with Cortex Analyst
+  prompt: |
+    Add a new “Natural Language Map Query” pane without changing the existing app...
+  outcome: NLQ pane added with Analyst-driven SQL and map rendering
+  next: Validate Analyst SQL generation
+
