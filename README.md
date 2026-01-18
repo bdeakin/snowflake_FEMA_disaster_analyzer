@@ -29,6 +29,9 @@ Required variables:
 Optional (use for OCSP/certificate issues):
 - `SNOWFLAKE_OCSP_FAIL_OPEN` (true/false)
 - `SNOWFLAKE_DISABLE_OCSP_CHECKS` (true/false)
+Optional (for bump chart LLM summaries):
+- `OPENAI_API_KEY`
+- `OPENAI_MODEL` (default: `gpt-4o-mini`)
 Note: OCSP errors were resolved by upgrading `snowflake-connector-python` to the version pinned in `requirements.txt`.
 
 ## Setup Runbook

@@ -30,9 +30,11 @@ try:
         get_drilldown,
         get_state_choropleth,
     )
+    from llm import summarize_bump_entry
     from viz import build_bump_chart, build_choropleth, build_cube_grid, build_drilldown
 except ImportError:
     queries = _load_module("app_queries", "queries.py")
+    llm = _load_module("app_llm", "llm.py")
     viz = _load_module("app_viz", "viz.py")
     get_bump_drilldown_state_summary = queries.get_bump_drilldown_state_summary
     get_cube_summary = queries.get_cube_summary
@@ -40,6 +42,7 @@ except ImportError:
     get_distinct_disaster_types = queries.get_distinct_disaster_types
     get_drilldown = queries.get_drilldown
     get_state_choropleth = queries.get_state_choropleth
+    summarize_bump_entry = llm.summarize_bump_entry
     build_bump_chart = viz.build_bump_chart
     build_choropleth = viz.build_choropleth
     build_cube_grid = viz.build_cube_grid
@@ -189,6 +192,7 @@ with bump_tab:
                 "period_decade": period_decade,
                 "disaster_type": disaster_type,
             }
+            st.session_state["show_bump_llm_modal"] = True
 
         selected_bump = st.session_state.get("bump_selected")
         if selected_bump and selected_bump.get("period_decade") and selected_bump.get("disaster_type"):
@@ -203,5 +207,35 @@ with bump_tab:
                 st.info("No drilldown data returned.")
             else:
                 st.dataframe(drilldown_summary.df, use_container_width=True)
+                top_states = (
+                    drilldown_summary.df[["state", "disaster_count"]]
+                    .dropna(subset=["state"])
+                    .head(5)
+                    .itertuples(index=False, name=None)
+                )
+                decade_year = str(selected_bump["period_decade"])[:4]
+                decade_label = f"{decade_year}s"
+                cache = st.session_state.setdefault("bump_llm_cache", {})
+                cache_key = f"{decade_label}|{selected_bump['disaster_type']}"
+                show_modal = st.session_state.get("show_bump_llm_modal")
+                if show_modal:
+                    @st.dialog("LLM Summary")
+                    def _show_llm_summary():
+                        if cache_key in cache:
+                            st.write(cache[cache_key])
+                        else:
+                            with st.spinner("Summarizing with OpenAI..."):
+                                try:
+                                    summary = summarize_bump_entry(
+                                        decade_label=decade_label,
+                                        disaster_type=selected_bump["disaster_type"],
+                                        top_states=top_states,
+                                    )
+                                    cache[cache_key] = summary
+                                    st.write(summary)
+                                except Exception as exc:
+                                    st.error(f"LLM summary failed: {exc}")
+                    _show_llm_summary()
+                    st.session_state["show_bump_llm_modal"] = False
         else:
             st.caption("Select a point in the bump chart to view drilldown details.")
