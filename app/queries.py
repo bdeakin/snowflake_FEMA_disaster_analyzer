@@ -194,6 +194,27 @@ def get_disaster_type_bump_ranks(limit_per_decade: int = 10) -> QueryResult:
     return fetch_df(sql, {"limit_per_decade": limit_per_decade})
 
 
+def get_sankey_rows(
+    start_date: str,
+    end_date: str,
+    disaster_types: Optional[list[str]] = None,
+) -> QueryResult:
+    type_clause, type_params = _in_clause("dtype", disaster_types)
+    params: Dict[str, Any] = {"start_date": start_date, "end_date": end_date, **type_params}
+    sql = """
+        SELECT
+          disaster_type AS disaster_type,
+          declaration_name AS declaration_name,
+          state AS state,
+          county_fips AS county_fips,
+          disaster_declaration_date AS disaster_declaration_date
+        FROM ANALYTICS.SILVER.FCT_DISASTERS
+        WHERE disaster_declaration_date BETWEEN %(start_date)s AND %(end_date)s
+          {type_clause}
+          AND state IS NOT NULL
+          AND county_fips IS NOT NULL
+    """.format(type_clause=type_clause)
+    return fetch_df(sql, params)
 
 
 def get_bump_drilldown_state_summary(period_decade: str, disaster_type: str) -> QueryResult:
