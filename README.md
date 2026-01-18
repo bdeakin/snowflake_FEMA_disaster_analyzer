@@ -2,6 +2,8 @@
 
 Streamlit app that visualizes FEMA disaster data from Snowflake Public Data using a choropleth overview, cube summaries, and county-centroid drilldowns.
 
+For the core architecture and data flow diagram, see `ARCHITECTURE.md`.
+
 ## WARNING: Destructive Setup
 The setup script **drops and recreates** the `ANALYTICS` database:
 
