@@ -6,8 +6,6 @@ import sys
 import streamlit as st
 import plotly.express as px
 
-from cortex_search import call_analyst, init_context, run_sql, snowflake_available
-
 app_dir = Path(__file__).resolve().parent
 if str(app_dir) not in sys.path:
     sys.path.insert(0, str(app_dir))
@@ -53,18 +51,10 @@ except ImportError:
 
 st.set_page_config(page_title="FEMA Disasters Explorer", layout="wide")
 
-if not st.session_state.get("snowflake_context_ready") and snowflake_available():
-    try:
-        init_context()
-        st.session_state["snowflake_context_ready"] = True
-    except Exception as exc:
-        st.error(f"Snowflake context initialization failed: {exc}")
-        st.stop()
-
 st.title("FEMA Disasters Explorer")
 
 
-explore_tab, bump_tab, cortex_tab = st.tabs(["Explore", "Disaster Type Trends", "Cortex Search"])
+explore_tab, bump_tab = st.tabs(["Explore", "Disaster Type Trends"])
 
 with explore_tab:
     st.sidebar.header("Filters")
@@ -250,59 +240,3 @@ with bump_tab:
         else:
             st.caption("Select a point in the bump chart to view drilldown details.")
 
-with cortex_tab:
-    st.header("Cortex Search")
-    st.caption("Ask questions about the data using Snowflake Cortex Analyst.")
-
-    if not snowflake_available():
-        st.info(
-            "Cortex Search requires Snowflake credentials or Streamlit in Snowflake. "
-            "If running on Streamlit Cloud, set SNOWFLAKE_TOKEN and SNOWFLAKE_ACCOUNT "
-            "in secrets."
-        )
-        st.stop()
-
-    if "cortex_messages" not in st.session_state:
-        st.session_state["cortex_messages"] = []
-
-    for message in st.session_state["cortex_messages"]:
-        with st.chat_message(message["role"]):
-            st.write(message["content"])
-            if message.get("sql"):
-                with st.expander("Show SQL"):
-                    st.code(message["sql"], language="sql")
-            if message.get("df") is not None:
-                st.dataframe(message["df"], use_container_width=True)
-
-    user_input = st.chat_input("Ask a question about the data...")
-    if user_input:
-        st.session_state["cortex_messages"].append({"role": "user", "content": user_input})
-        with st.chat_message("user"):
-            st.write(user_input)
-
-        messages = [
-            {"role": msg["role"], "content": msg["content"]}
-            for msg in st.session_state["cortex_messages"]
-        ]
-        with st.chat_message("assistant"):
-            try:
-                text_blocks, sql_blocks = call_analyst(messages)
-                answer_text = "\n\n".join(text_blocks).strip() or "No text response."
-                st.write(answer_text)
-
-                sql_text = sql_blocks[0] if sql_blocks else None
-                df = None
-                if sql_text:
-                    with st.expander("Show SQL"):
-                        st.code(sql_text, language="sql")
-                    try:
-                        df = run_sql(sql_text)
-                        st.dataframe(df, use_container_width=True)
-                    except Exception as exc:
-                        st.error(f"SQL execution failed: {exc}")
-
-                st.session_state["cortex_messages"].append(
-                    {"role": "assistant", "content": answer_text, "sql": sql_text, "df": df}
-                )
-            except Exception as exc:
-                st.error(f"Cortex Analyst call failed: {exc}")
