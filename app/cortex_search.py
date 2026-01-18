@@ -15,23 +15,6 @@ try:
 except Exception:
     st = None
     _STREAMLIT_AVAILABLE = False
-# #region agent log
-_LOG_PATH = "/Users/bdeakin/Documents/Vibe Coding/snowflake_FEMA_disaster_analyzer/.cursor/debug.log"
-
-
-def _log_debug(hypothesis_id: str, location: str, message: str, data: Dict[str, Any]) -> None:
-    payload = {
-        "sessionId": "debug-session",
-        "runId": "pre-fix",
-        "hypothesisId": hypothesis_id,
-        "location": location,
-        "message": message,
-        "data": data,
-        "timestamp": int(__import__("time").time() * 1000),
-    }
-    with open(_LOG_PATH, "a", encoding="utf-8") as f:
-        f.write(json.dumps(payload) + "\n")
-# #endregion
 
 try:
     import _snowflake  # type: ignore
@@ -223,23 +206,6 @@ def _call_analyst_rest_local(body: Dict[str, Any]) -> Any:
     base_url = f"https://{account_host}.snowflakecomputing.com"
     url = f"{base_url}/api/v2/cortex/analyst/message"
     token_type = os.getenv("SNOWFLAKE_TOKEN_TYPE", "PAT")
-    # #region agent log
-    _log_debug(
-        "H1",
-        "cortex_search.py:_call_analyst_rest_local",
-        "Preparing REST call",
-        {
-            "has_token": bool(token),
-            "account": account,
-            "account_host": account_host,
-            "token_type": token_type,
-            "token_len": len(token) if token else 0,
-            "has_role": bool(os.getenv("SNOWFLAKE_ROLE")),
-            "has_wh": bool(os.getenv("SNOWFLAKE_WAREHOUSE")),
-            "url": url,
-        },
-    )
-    # #endregion
     headers = {
         "Authorization": f"Bearer {token}",
         "Content-Type": "application/json",
@@ -256,30 +222,6 @@ def _call_analyst_rest_local(body: Dict[str, Any]) -> Any:
     if warehouse:
         headers["X-Snowflake-Warehouse"] = warehouse
     resp = requests.post(url, headers=headers, json=body, timeout=30)
-    # #region agent log
-    _log_debug(
-        "H2",
-        "cortex_search.py:_call_analyst_rest_local",
-        "REST response status",
-        {
-            "status_code": resp.status_code,
-            "reason": resp.reason,
-            "text_snippet": resp.text[:200],
-        },
-    )
-    # #endregion
-    # #region agent log
-    _log_debug(
-        "H3",
-        "cortex_search.py:_call_analyst_rest_local",
-        "REST response headers (subset)",
-        {
-            "www_authenticate": resp.headers.get("www-authenticate"),
-            "request_id": resp.headers.get("x-snowflake-request-id"),
-            "content_type": resp.headers.get("content-type"),
-        },
-    )
-    # #endregion
     if resp.status_code == 401:
         auth_hint = resp.headers.get("www-authenticate")
         request_id = resp.headers.get("x-snowflake-request-id")
