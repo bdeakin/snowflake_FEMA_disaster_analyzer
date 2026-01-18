@@ -1,14 +1,40 @@
 import datetime as dt
+import hashlib
+import json
+import time
 import importlib.util
 from pathlib import Path
 import sys
 
+import pandas as pd
 import streamlit as st
 import plotly.express as px
+from streamlit_plotly_events import plotly_events
 
 app_dir = Path(__file__).resolve().parent
 if str(app_dir) not in sys.path:
     sys.path.insert(0, str(app_dir))
+
+# #region agent log
+_LOG_PATH = "/Users/bdeakin/Documents/Vibe Coding/snowflake_FEMA_disaster_analyzer/.cursor/debug.log"
+
+
+def _log_debug(hypothesis_id: str, location: str, message: str, data: dict) -> None:
+    payload = {
+        "sessionId": "debug-session",
+        "runId": "pre-fix",
+        "hypothesisId": hypothesis_id,
+        "location": location,
+        "message": message,
+        "data": data,
+        "timestamp": int(time.time() * 1000),
+    }
+    try:
+        with open(_LOG_PATH, "a", encoding="utf-8") as f:
+            f.write(json.dumps(payload) + "\n")
+    except Exception:
+        pass
+# #endregion
 
 def _load_module(module_name: str, file_name: str):
     file_path = app_dir / file_name
@@ -28,10 +54,22 @@ try:
         get_disaster_type_bump_ranks,
         get_distinct_disaster_types,
         get_drilldown,
+        get_sankey_rows,
         get_state_choropleth,
     )
-    from llm import summarize_bump_entry
-    from viz import build_bump_chart, build_choropleth, build_cube_grid, build_drilldown
+    from llm import (
+        summarize_bump_entry,
+        group_declaration_names,
+        estimate_hurricane_damage,
+        estimate_hurricane_year_damage,
+    )
+    from viz import (
+        build_bump_chart,
+        build_choropleth,
+        build_cube_grid,
+        build_drilldown,
+        build_sankey,
+    )
 except ImportError:
     queries = _load_module("app_queries", "queries.py")
     llm = _load_module("app_llm", "llm.py")
@@ -41,41 +79,46 @@ except ImportError:
     get_disaster_type_bump_ranks = queries.get_disaster_type_bump_ranks
     get_distinct_disaster_types = queries.get_distinct_disaster_types
     get_drilldown = queries.get_drilldown
+    get_sankey_rows = queries.get_sankey_rows
     get_state_choropleth = queries.get_state_choropleth
     summarize_bump_entry = llm.summarize_bump_entry
+    group_declaration_names = llm.group_declaration_names
+    estimate_hurricane_damage = llm.estimate_hurricane_damage
+    estimate_hurricane_year_damage = llm.estimate_hurricane_year_damage
     build_bump_chart = viz.build_bump_chart
     build_choropleth = viz.build_choropleth
     build_cube_grid = viz.build_cube_grid
     build_drilldown = viz.build_drilldown
+    build_sankey = viz.build_sankey
 
 
 st.set_page_config(page_title="FEMA Disasters Explorer", layout="wide")
 
 st.title("FEMA Disasters Explorer")
 
+st.sidebar.header("Filters")
+default_start = dt.date(2023, 1, 1)
+default_end = dt.date(2025, 12, 31)
+start_date = st.sidebar.date_input("Disaster declaration start date", value=default_start)
+end_date = st.sidebar.date_input("Disaster declaration end date", value=default_end)
 
-explore_tab, bump_tab = st.tabs(["Explore", "Disaster Type Trends"])
+if start_date > end_date:
+    st.error("Start date must be before end date.")
+    st.stop()
+
+type_result = get_distinct_disaster_types()
+type_options = type_result.df["disaster_type"].dropna().tolist()
+selected_types = st.sidebar.multiselect(
+    "Disaster types",
+    options=type_options,
+    default=type_options,
+)
+if not selected_types:
+    selected_types = None
+
+explore_tab, bump_tab, sankey_tab = st.tabs(["Explore", "Disaster Type Trends", "Sankey"])
 
 with explore_tab:
-    st.sidebar.header("Filters")
-    default_start = dt.date(2023, 1, 1)
-    default_end = dt.date(2025, 12, 31)
-    start_date = st.sidebar.date_input("Disaster declaration start date", value=default_start)
-    end_date = st.sidebar.date_input("Disaster declaration end date", value=default_end)
-
-    if start_date > end_date:
-        st.error("Start date must be before end date.")
-        st.stop()
-
-    type_result = get_distinct_disaster_types()
-    type_options = type_result.df["disaster_type"].dropna().tolist()
-    selected_types = st.sidebar.multiselect(
-        "Disaster types",
-        options=type_options,
-        default=type_options,
-    )
-    if not selected_types:
-        selected_types = None
 
     def _select_grain(start: dt.date, end: dt.date) -> str:
         if end.year - start.year >= 1:
@@ -239,4 +282,318 @@ with bump_tab:
                     st.session_state["show_bump_llm_modal"] = False
         else:
             st.caption("Select a point in the bump chart to view drilldown details.")
+
+with sankey_tab:
+    st.subheader("Incident Type → Disaster → State Counties")
+    sankey_filters = st.container()
+    with sankey_filters:
+        sankey_start = st.date_input(
+            "Sankey start date",
+            value=start_date,
+            key="sankey_start_date",
+        )
+        sankey_end = st.date_input(
+            "Sankey end date",
+            value=end_date,
+            key="sankey_end_date",
+        )
+        if sankey_start > sankey_end:
+            st.error("Sankey start date must be before end date.")
+            st.stop()
+        sankey_type_default = "Hurricane" if "Hurricane" in type_options else type_options[0]
+        sankey_type = st.selectbox(
+            "Sankey incident type",
+            options=type_options,
+            index=type_options.index(sankey_type_default),
+            key="sankey_type",
+        )
+
+    sankey_result = get_sankey_rows(
+        sankey_start.isoformat(),
+        sankey_end.isoformat(),
+        [sankey_type],
+    )
+    if sankey_result.df.empty:
+        st.info("No data available for the selected filters.")
+    else:
+        df = sankey_result.df.copy()
+        df["disaster_declaration_date"] = pd.to_datetime(df["disaster_declaration_date"])
+        df["hurricane_year"] = df["disaster_declaration_date"].dt.year.astype(int)
+        names = df["declaration_name"].fillna("").astype(str).str.strip()
+        unique_names = sorted({name for name in names.tolist() if name})
+        hash_input = "|".join(unique_names).encode("utf-8")
+        cache_key = f"sankey_name_map_{hashlib.md5(hash_input).hexdigest()}"
+        name_map = st.session_state.get(cache_key)
+        if name_map is None:
+            with st.spinner("Grouping disaster names..."):
+                try:
+                    name_map = group_declaration_names(unique_names)
+                except Exception as exc:
+                    st.error(f"LLM grouping failed: {exc}")
+                    name_map = {}
+            st.session_state[cache_key] = name_map
+        df["grouped_name"] = names.apply(
+            lambda value: name_map.get(value, value) if value else "Other/Unnamed"
+        )
+        df.loc[df["grouped_name"].eq(""), "grouped_name"] = "Other/Unnamed"
+
+        year_group = (
+            df.groupby(["hurricane_year", "grouped_name"])["county_fips"]
+            .nunique()
+            .reset_index(name="value")
+        )
+        group_state = (
+            df.groupby(["grouped_name", "state"])["county_fips"]
+            .nunique()
+            .reset_index(name="value")
+        )
+        links = pd.concat(
+            [
+                year_group.rename(columns={"hurricane_year": "source", "grouped_name": "target"}),
+                group_state.rename(columns={"grouped_name": "source", "state": "target"}),
+            ],
+            ignore_index=True,
+        )
+        left_nodes = (
+            year_group["hurricane_year"]
+            .dropna()
+            .astype(int)
+            .sort_values()
+            .astype(str)
+            .unique()
+            .tolist()
+        )
+        middle_nodes = sorted(year_group["grouped_name"].dropna().unique().tolist())
+        right_nodes = sorted(group_state["state"].dropna().unique().tolist())
+        links["source"] = links["source"].astype(str)
+        links["target"] = links["target"].astype(str)
+        # #region agent log
+        _log_debug(
+            "H6",
+            "app.py:sankey_tab",
+            "Sankey link snapshot",
+            {
+                "link_count": len(links),
+                "links_head": links.head(15).to_dict(orient="records"),
+                "left_nodes": left_nodes[:10],
+                "middle_nodes": middle_nodes[:10],
+                "right_nodes": right_nodes[:10],
+            },
+        )
+        # #endregion
+        sankey_fig = build_sankey(links, left_nodes, middle_nodes, right_nodes)
+        node_labels = list(dict.fromkeys(left_nodes + middle_nodes + right_nodes))
+        st.session_state["sankey_node_labels"] = node_labels
+        sankey_events = plotly_events(
+            sankey_fig,
+            click_event=True,
+            select_event=False,
+            hover_event=True,
+        )
+        # #region agent log
+        _log_debug(
+            "H1",
+            "app.py:sankey_tab",
+            "Sankey click events",
+            {
+                "event_count": len(sankey_events),
+                "event_keys": [list(ev.keys()) for ev in sankey_events[:3]],
+            },
+        )
+        # #endregion
+        selected_label = None
+        if sankey_events:
+            point = None
+            for ev in sankey_events:
+                if (isinstance(ev, dict) and (
+                    "customdata" in ev or ("source" in ev and "target" in ev)
+                )):
+                    point = ev
+                    break
+            if point is None:
+                point = sankey_events[0]
+            selected_label = point.get("label")
+            labels = st.session_state.get("sankey_node_labels", list(dict.fromkeys(left_nodes + middle_nodes + right_nodes)))
+            point_idx = point.get("pointNumber")
+            if not selected_label and isinstance(point_idx, int) and 0 <= point_idx < len(labels):
+                selected_label = labels[point_idx]
+            link_pair = None
+            if isinstance(point, dict):
+                customdata = point.get("customdata")
+                if isinstance(customdata, list) and len(customdata) == 2:
+                    link_pair = {"source": customdata[0], "target": customdata[1]}
+                if point.get("source") is not None and point.get("target") is not None:
+                    try:
+                        source_idx = int(point.get("source"))
+                        target_idx = int(point.get("target"))
+                        if 0 <= source_idx < len(labels) and 0 <= target_idx < len(labels):
+                            link_pair = {"source": labels[source_idx], "target": labels[target_idx]}
+                    except Exception:
+                        pass
+                if link_pair is None and isinstance(point_idx, int):
+                    try:
+                        link_source = sankey_fig.data[0]["link"]["source"][point_idx]
+                        link_target = sankey_fig.data[0]["link"]["target"][point_idx]
+                        if 0 <= link_source < len(labels) and 0 <= link_target < len(labels):
+                            link_pair = {"source": labels[link_source], "target": labels[link_target]}
+                    except Exception:
+                        pass
+            # #region agent log
+            link_info = None
+            if isinstance(point_idx, int) and 0 <= point_idx < len(links):
+                link_row = links.iloc[point_idx]
+                link_info = {
+                    "source": link_row.get("source"),
+                    "target": link_row.get("target"),
+                    "value": int(link_row.get("value")) if "value" in link_row else None,
+                }
+            _log_debug(
+                "H1",
+                "app.py:sankey_tab",
+                "Sankey event data",
+                {
+                    "point": point,
+                    "selected_label": selected_label,
+                    "point_index": point_idx,
+                    "link_info": link_info,
+                    "link_pair": link_pair,
+                    "point_keys": list(point.keys()) if isinstance(point, dict) else None,
+                },
+            )
+            # #endregion
+        # #region agent log
+        _log_debug(
+            "H2",
+            "app.py:sankey_tab",
+            "Sankey selection",
+            {
+                "selected_label": selected_label,
+                "left_count": len(left_nodes),
+                "middle_count": len(middle_nodes),
+                "right_count": len(right_nodes),
+            },
+        )
+        # #endregion
+
+        if link_pair:
+            if link_pair["source"] in middle_nodes and link_pair["target"] in right_nodes:
+                st.session_state["sankey_selected_hurricane"] = link_pair["source"]
+                st.session_state["sankey_selected_state"] = link_pair["target"]
+            elif link_pair["source"] in left_nodes and link_pair["target"] in middle_nodes:
+                st.session_state["sankey_selected_hurricane"] = link_pair["target"]
+                st.session_state["sankey_selected_year"] = link_pair["source"]
+        elif selected_label:
+            if selected_label in middle_nodes:
+                st.session_state["sankey_selected_hurricane"] = selected_label
+            elif selected_label in right_nodes:
+                st.session_state["sankey_selected_state"] = selected_label
+            elif selected_label in left_nodes:
+                st.session_state["sankey_selected_year"] = selected_label
+
+        if sankey_type == "Hurricane":
+            cache = st.session_state.setdefault("sankey_damage_cache", {})
+            selected_hurricane = st.session_state.get("sankey_selected_hurricane")
+            selected_state = st.session_state.get("sankey_selected_state")
+            selected_year = st.session_state.get("sankey_selected_year")
+
+            if link_pair and link_pair["source"] in left_nodes and link_pair["target"] in middle_nodes:
+                st.session_state["sankey_damage_modal"] = {
+                    "kind": "hurricane",
+                    "hurricane": selected_hurricane,
+                    "state": None,
+                    "year": None,
+                }
+            elif link_pair and link_pair["source"] in middle_nodes and link_pair["target"] in right_nodes:
+                st.session_state["sankey_damage_modal"] = {
+                    "kind": "state",
+                    "hurricane": selected_hurricane,
+                    "state": selected_state,
+                    "year": None,
+                }
+            elif selected_label in left_nodes:
+                st.session_state["sankey_damage_modal"] = {
+                    "kind": "year",
+                    "year": int(selected_year) if selected_year else None,
+                    "hurricane": None,
+                    "state": None,
+                }
+            elif selected_label in middle_nodes:
+                st.session_state["sankey_damage_modal"] = {
+                    "kind": "hurricane",
+                    "hurricane": selected_hurricane,
+                    "state": None,
+                    "year": None,
+                }
+            elif selected_label in right_nodes:
+                if not selected_hurricane:
+                    st.info("Select a hurricane name before requesting state damage estimates.")
+                else:
+                    st.session_state["sankey_damage_modal"] = {
+                        "kind": "state",
+                        "hurricane": selected_hurricane,
+                        "state": selected_state,
+                        "year": None,
+                    }
+
+            modal_payload = st.session_state.get("sankey_damage_modal")
+            # #region agent log
+            _log_debug(
+                "H3",
+                "app.py:sankey_tab",
+                "Modal payload",
+                {"modal_payload": modal_payload},
+            )
+            # #endregion
+            if modal_payload:
+                title = "Estimated Hurricane Damages"
+                if modal_payload["kind"] == "state":
+                    title = f"Estimated Damages: {modal_payload['state']}"
+                if modal_payload["kind"] == "year":
+                    title = f"Estimated Damages: {modal_payload['year']}"
+                # #region agent log
+                _log_debug(
+                    "H5",
+                    "app.py:sankey_tab",
+                    "Opening damage modal",
+                    {"payload": modal_payload},
+                )
+                # #endregion
+
+                @st.dialog(title)
+                def _show_damage_modal():
+                    if modal_payload["kind"] == "year":
+                        cache_key = f"hurricane_year:{modal_payload['year']}"
+                    elif modal_payload["kind"] == "hurricane":
+                        cache_key = f"hurricane:{modal_payload['hurricane']}"
+                    else:
+                        cache_key = f"hurricane:{modal_payload['hurricane']}:state:{modal_payload['state']}"
+                    if cache_key in cache:
+                        st.write(cache[cache_key])
+                    else:
+                        with st.spinner("Estimating hurricane damages..."):
+                            try:
+                                if modal_payload["kind"] == "year":
+                                    cache[cache_key] = estimate_hurricane_year_damage(
+                                        int(modal_payload["year"])
+                                    )
+                                else:
+                                    # #region agent log
+                                    _log_debug(
+                                        "H4",
+                                        "app.py:sankey_tab",
+                                        "Calling estimate_hurricane_damage",
+                                        {"cache_key": cache_key},
+                                    )
+                                    # #endregion
+                                    cache[cache_key] = estimate_hurricane_damage(
+                                        modal_payload["hurricane"],
+                                        state=modal_payload["state"],
+                                    )
+                                st.write(cache[cache_key])
+                            except Exception as exc:
+                                st.error(f"Damage estimate failed: {exc}")
+
+                _show_damage_modal()
+                st.session_state["sankey_damage_modal"] = None
+        st.caption("Counts represent distinct counties affected.")
 
