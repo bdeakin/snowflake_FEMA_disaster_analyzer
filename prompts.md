@@ -625,3 +625,17 @@ Format:
     I've added public data to the account. It should be accessible now.
   outcome: Rebuilt Silver/Gold and validated row counts
   next: Verify app renders
+
+- timestamp: 2026-01-18 16:40
+  goal: Sunburst hierarchy adjustment
+  prompt: |
+    The problem is that Hurricane Helene hit North Carolina as a tropical storm. Therefore, it will be necessary to also consider named Tropical Storms in the Sunburst Chart. The top-level should be coalesced into Named Hurricanes and Tropical Storms. Also, update the prompts.md based on the prompts provided so far.
+  outcome: Added Tropical Storms into sunburst categories and updated prompts log
+  next: Validate NC appears under Tropical Storms
+
+- timestamp: 2026-01-18 16:55
+  goal: GNews integration
+  prompt: |
+    I'm going to put GNEWS_API_KEY in secrets.env. Please rebuild using GNEWS.
+  outcome: Switched state-click news lookup to GNews API
+  next: Verify headline retrieval

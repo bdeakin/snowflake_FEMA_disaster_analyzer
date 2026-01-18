@@ -246,3 +246,24 @@ def build_sankey(
         annotations=annotations,
     )
     return fig
+
+
+def build_sunburst(nodes: pd.DataFrame) -> go.Figure:
+    if nodes.empty:
+        return go.Figure()
+    fig = go.Figure(
+        data=[
+            go.Sunburst(
+                ids=nodes["id"],
+                labels=nodes["label"],
+                parents=nodes["parent"],
+                values=nodes["value"],
+                customdata=nodes["customdata"],
+                marker={"colors": nodes["color"], "line": {"color": "#ffffff", "width": 1}},
+                hovertemplate="%{label}<br>Count: %{value}<extra></extra>",
+                branchvalues="total",
+            )
+        ]
+    )
+    fig.update_layout(margin={"r": 0, "t": 20, "l": 0, "b": 0})
+    return fig

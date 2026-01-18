@@ -188,3 +188,48 @@ def estimate_hurricane_year_damage(
     return data["choices"][0]["message"]["content"].strip()
 
 
+def summarize_gdelt_headlines(
+    hurricane_name: str,
+    state: str,
+    articles: List[Dict[str, str]],
+    timeout_s: int = 25,
+) -> str:
+    api_key = os.getenv("OPENAI_API_KEY")
+    if not api_key:
+        raise RuntimeError("OPENAI_API_KEY is not set.")
+
+    model = os.getenv("OPENAI_MODEL", "gpt-4o-mini")
+    if not articles:
+        return "No recent articles found for this hurricane/state."
+
+    article_lines = [
+        f"- {a.get('title','').strip()} | {a.get('url','').strip()}"
+        for a in articles
+        if a.get("title") and a.get("url")
+    ]
+    system_prompt = (
+        "You are a news curator. Select the most relevant headlines for the hurricane and state. "
+        "Return a concise bullet list with the title and link. Do not invent sources."
+    )
+    user_prompt = (
+        f"Hurricane: {hurricane_name}\n"
+        f"State: {state}\n"
+        "Candidate headlines:\n"
+        + "\n".join(article_lines)
+        + "\n\nReturn up to 3 bullets: '- Title (URL)'."
+    )
+    payload = {
+        "model": model,
+        "temperature": 0.2,
+        "messages": [
+            {"role": "system", "content": system_prompt},
+            {"role": "user", "content": user_prompt},
+        ],
+    }
+    headers = {"Authorization": f"Bearer {api_key}", "Content-Type": "application/json"}
+    resp = requests.post(OPENAI_URL, json=payload, headers=headers, timeout=timeout_s)
+    resp.raise_for_status()
+    data = resp.json()
+    return data["choices"][0]["message"]["content"].strip()
+
+

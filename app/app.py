@@ -1,6 +1,7 @@
 import datetime as dt
 import hashlib
 import json
+import os
 import time
 import importlib.util
 from pathlib import Path
@@ -10,6 +11,7 @@ import pandas as pd
 import streamlit as st
 import plotly.express as px
 from streamlit_plotly_events import plotly_events
+import requests
 
 app_dir = Path(__file__).resolve().parent
 if str(app_dir) not in sys.path:
@@ -62,6 +64,7 @@ try:
         group_declaration_names,
         estimate_hurricane_damage,
         estimate_hurricane_year_damage,
+        summarize_gdelt_headlines,
     )
     from viz import (
         build_bump_chart,
@@ -69,6 +72,7 @@ try:
         build_cube_grid,
         build_drilldown,
         build_sankey,
+        build_sunburst,
     )
 except ImportError:
     queries = _load_module("app_queries", "queries.py")
@@ -85,11 +89,13 @@ except ImportError:
     group_declaration_names = llm.group_declaration_names
     estimate_hurricane_damage = llm.estimate_hurricane_damage
     estimate_hurricane_year_damage = llm.estimate_hurricane_year_damage
+    summarize_gdelt_headlines = llm.summarize_gdelt_headlines
     build_bump_chart = viz.build_bump_chart
     build_choropleth = viz.build_choropleth
     build_cube_grid = viz.build_cube_grid
     build_drilldown = viz.build_drilldown
     build_sankey = viz.build_sankey
+    build_sunburst = viz.build_sunburst
 
 
 st.set_page_config(page_title="FEMA Disasters Explorer", layout="wide")
@@ -116,7 +122,9 @@ selected_types = st.sidebar.multiselect(
 if not selected_types:
     selected_types = None
 
-explore_tab, bump_tab, sankey_tab = st.tabs(["Explore", "Disaster Type Trends", "Sankey"])
+explore_tab, bump_tab, sankey_tab, sunburst_tab = st.tabs(
+    ["Explore", "Disaster Type Trends", "Sankey", "Sunburst"]
+)
 
 with explore_tab:
 
@@ -402,6 +410,7 @@ with sankey_tab:
         )
         # #endregion
         selected_label = None
+        link_pair = None
         if sankey_events:
             point = None
             for ev in sankey_events:
@@ -596,4 +605,313 @@ with sankey_tab:
                 _show_damage_modal()
                 st.session_state["sankey_damage_modal"] = None
         st.caption("Counts represent distinct counties affected.")
+
+with sunburst_tab:
+    st.subheader("Hurricane → Year → Hurricane → State")
+    if st.button("Reset Sunburst view"):
+        st.session_state["sunburst_reset_key"] = st.session_state.get("sunburst_reset_key", 0) + 1
+    sunburst_result = get_sankey_rows(
+        start_date.isoformat(),
+        end_date.isoformat(),
+        ["Hurricane", "Tropical Storm"],
+    )
+    if sunburst_result.df.empty:
+        st.info("No hurricane data available for the selected filters.")
+    else:
+        df = sunburst_result.df.copy()
+        df["disaster_declaration_date"] = pd.to_datetime(df["disaster_declaration_date"])
+        df["year"] = df["disaster_declaration_date"].dt.year.astype(int).astype(str)
+        df["storm_category"] = df["disaster_type"].map(
+            {"Hurricane": "Named Hurricanes", "Tropical Storm": "Tropical Storms"}
+        ).fillna("Other Storms")
+        names = df["declaration_name"].fillna("").astype(str).str.strip()
+        unique_names = sorted({name for name in names.tolist() if name})
+        hash_input = "|".join(unique_names).encode("utf-8")
+        cache_key = f"sunburst_name_map_{hashlib.md5(hash_input).hexdigest()}"
+        name_map = st.session_state.get(cache_key)
+        if name_map is None:
+            with st.spinner("Grouping hurricane names..."):
+                try:
+                    name_map = group_declaration_names(unique_names)
+                except Exception as exc:
+                    st.error(f"LLM grouping failed: {exc}")
+                    name_map = {}
+            st.session_state[cache_key] = name_map
+        df["hurricane"] = names.apply(
+            lambda value: name_map.get(value, value) if value else "Other/Unnamed"
+        )
+        df.loc[df["hurricane"].eq(""), "hurricane"] = "Other/Unnamed"
+        df["state"] = df["state"].fillna("Unknown")
+        sunburst_df = (
+            df.groupby(["storm_category", "year", "hurricane", "state"])["county_fips"]
+            .nunique()
+            .reset_index(name="value")
+        )
+        # #region agent log
+        helene_states = (
+            sunburst_df[sunburst_df["hurricane"].str.contains("Helene", case=False, na=False)]
+            .groupby("state")["value"]
+            .sum()
+            .sort_values(ascending=False)
+            .head(20)
+            .to_dict()
+        )
+        _log_debug(
+            "H11",
+            "app.py:sunburst_tab",
+            "Helene state counts in sunburst",
+            {"states": helene_states},
+        )
+        # #endregion
+
+        nodes = []
+        palette = px.colors.qualitative.Safe + px.colors.qualitative.Plotly
+        nodes.append(
+            {
+                "id": "root",
+                "label": "Named Storms",
+                "parent": "",
+                "value": int(sunburst_df["value"].sum()),
+                "customdata": {"node_type": "root"},
+                "color": "#ffffff",
+            }
+        )
+
+        category_totals = (
+            sunburst_df.groupby("storm_category")["value"].sum().reset_index()
+        )
+        year_totals = (
+            sunburst_df.groupby(["storm_category", "year"])["value"]
+            .sum()
+            .reset_index()
+        )
+        year_list = year_totals["year"].tolist()
+        year_colors = {
+            year: palette[idx % len(palette)] for idx, year in enumerate(sorted(year_list))
+        }
+        for row in category_totals.itertuples(index=False):
+            nodes.append(
+                {
+                    "id": f"category:{row.storm_category}",
+                    "label": row.storm_category,
+                    "parent": "root",
+                    "value": int(row.value),
+                    "customdata": {"node_type": "category", "category": row.storm_category},
+                    "color": "#dddddd",
+                }
+            )
+        for row in year_totals.itertuples(index=False):
+            nodes.append(
+                {
+                    "id": f"category:{row.storm_category}|year:{row.year}",
+                    "label": str(row.year),
+                    "parent": f"category:{row.storm_category}",
+                    "value": int(row.value),
+                    "customdata": {
+                        "node_type": "year",
+                        "year": str(row.year),
+                        "category": row.storm_category,
+                    },
+                    "color": year_colors.get(row.year, "#cccccc"),
+                }
+            )
+
+        year_hurricane = (
+            sunburst_df.groupby(["storm_category", "year", "hurricane"])["value"]
+            .sum()
+            .reset_index()
+        )
+        for row in year_hurricane.itertuples(index=False):
+            nodes.append(
+                {
+                    "id": f"category:{row.storm_category}|year:{row.year}|hurricane:{row.hurricane}",
+                    "label": row.hurricane,
+                    "parent": f"category:{row.storm_category}|year:{row.year}",
+                    "value": int(row.value),
+                    "customdata": {
+                        "node_type": "hurricane",
+                        "year": str(row.year),
+                        "hurricane": row.hurricane,
+                        "category": row.storm_category,
+                    },
+                    "color": year_colors.get(row.year, "#cccccc"),
+                }
+            )
+
+        for row in sunburst_df.itertuples(index=False):
+            nodes.append(
+                {
+                    "id": (
+                        f"category:{row.storm_category}|year:{row.year}|"
+                        f"hurricane:{row.hurricane}|state:{row.state}"
+                    ),
+                    "label": row.state,
+                    "parent": f"category:{row.storm_category}|year:{row.year}|hurricane:{row.hurricane}",
+                    "value": int(row.value),
+                    "customdata": {
+                        "node_type": "state",
+                        "year": str(row.year),
+                        "hurricane": row.hurricane,
+                        "state": row.state,
+                        "category": row.storm_category,
+                    },
+                    "color": year_colors.get(row.year, "#cccccc"),
+                }
+            )
+
+        nodes_df = pd.DataFrame(nodes)
+        st.session_state["sunburst_nodes_df"] = nodes_df
+        sunburst_fig = build_sunburst(nodes_df)
+        reset_key = st.session_state.get("sunburst_reset_key", 0)
+        sunburst_events = plotly_events(
+            sunburst_fig,
+            click_event=True,
+            select_event=False,
+            hover_event=False,
+            key=f"sunburst_{reset_key}",
+        )
+        # #region agent log
+        _log_debug(
+            "H7",
+            "app.py:sunburst_tab",
+            "Sunburst click events",
+            {"event_count": len(sunburst_events), "event_keys": [list(ev.keys()) for ev in sunburst_events[:3]]},
+        )
+        # #endregion
+        if sunburst_events:
+            event = sunburst_events[0]
+            cd = event.get("customdata") if isinstance(event, dict) else None
+            if cd is None and isinstance(event, dict) and "pointNumber" in event:
+                nodes_df = st.session_state.get("sunburst_nodes_df")
+                if isinstance(nodes_df, pd.DataFrame):
+                    idx = int(event["pointNumber"])
+                    if 0 <= idx < len(nodes_df):
+                        cd = nodes_df.iloc[idx]["customdata"]
+            # #region agent log
+            _log_debug(
+                "H8",
+                "app.py:sunburst_tab",
+                "Sunburst click payload",
+                {"event": event, "customdata": cd},
+            )
+            # #endregion
+            if isinstance(cd, dict) and cd.get("node_type") == "state":
+                hurricane = cd.get("hurricane")
+                state = cd.get("state")
+                cache = st.session_state.setdefault("sunburst_news_cache", {})
+                cache_key = f"news:{hurricane}:{state}"
+                st.session_state["sunburst_news_modal"] = {
+                    "hurricane": hurricane,
+                    "state": state,
+                    "cache_key": cache_key,
+                }
+
+        modal_payload = st.session_state.get("sunburst_news_modal")
+        # #region agent log
+        _log_debug(
+            "H9",
+            "app.py:sunburst_tab",
+            "Sunburst modal payload",
+            {"modal_payload": modal_payload},
+        )
+        # #endregion
+        if modal_payload:
+            @st.dialog(f"Local headlines: {modal_payload['state']}")
+            def _show_news_modal():
+                cache = st.session_state.setdefault("sunburst_news_cache", {})
+                if modal_payload["cache_key"] in cache:
+                    st.write(cache[modal_payload["cache_key"]])
+                    return
+
+                state_lookup = {
+                    "AL": "Alabama",
+                    "AK": "Alaska",
+                    "AZ": "Arizona",
+                    "AR": "Arkansas",
+                    "CA": "California",
+                    "CO": "Colorado",
+                    "CT": "Connecticut",
+                    "DE": "Delaware",
+                    "FL": "Florida",
+                    "GA": "Georgia",
+                    "HI": "Hawaii",
+                    "ID": "Idaho",
+                    "IL": "Illinois",
+                    "IN": "Indiana",
+                    "IA": "Iowa",
+                    "KS": "Kansas",
+                    "KY": "Kentucky",
+                    "LA": "Louisiana",
+                    "ME": "Maine",
+                    "MD": "Maryland",
+                    "MA": "Massachusetts",
+                    "MI": "Michigan",
+                    "MN": "Minnesota",
+                    "MS": "Mississippi",
+                    "MO": "Missouri",
+                    "MT": "Montana",
+                    "NE": "Nebraska",
+                    "NV": "Nevada",
+                    "NH": "New Hampshire",
+                    "NJ": "New Jersey",
+                    "NM": "New Mexico",
+                    "NY": "New York",
+                    "NC": "North Carolina",
+                    "ND": "North Dakota",
+                    "OH": "Ohio",
+                    "OK": "Oklahoma",
+                    "OR": "Oregon",
+                    "PA": "Pennsylvania",
+                    "RI": "Rhode Island",
+                    "SC": "South Carolina",
+                    "SD": "South Dakota",
+                    "TN": "Tennessee",
+                    "TX": "Texas",
+                    "UT": "Utah",
+                    "VT": "Vermont",
+                    "VA": "Virginia",
+                    "WA": "Washington",
+                    "WV": "West Virginia",
+                    "WI": "Wisconsin",
+                    "WY": "Wyoming",
+                }
+                state_full = state_lookup.get(modal_payload["state"], modal_payload["state"])
+                query = f'\"{modal_payload["hurricane"]}\" AND (\"{state_full}\" OR {modal_payload["state"]})'
+                gnews_key = os.getenv("GNEWS_API_KEY")
+                if not gnews_key:
+                    st.error("GNEWS_API_KEY is not set.")
+                    return
+                url = (
+                    "https://gnews.io/api/v4/search"
+                    f"?q={requests.utils.quote(query)}&lang=en&max=3&token={requests.utils.quote(gnews_key)}"
+                )
+                with st.spinner("Fetching local headlines..."):
+                    try:
+                        resp = requests.get(url, timeout=20)
+                        resp.raise_for_status()
+                        data = resp.json()
+                        articles = [
+                            {"title": item.get("title"), "url": item.get("url")}
+                            for item in data.get("articles", [])
+                        ]
+                        # #region agent log
+                        _log_debug(
+                            "H10",
+                            "app.py:sunburst_tab",
+                            "GDELT articles fetched",
+                            {"article_count": len(articles), "query": query},
+                        )
+                        # #endregion
+                        summary = summarize_gdelt_headlines(
+                            modal_payload["hurricane"],
+                            modal_payload["state"],
+                            articles,
+                        )
+                        cache[modal_payload["cache_key"]] = summary
+                        st.write(summary)
+                    except Exception as exc:
+                        st.error(f"News lookup failed: {exc}")
+
+            _show_news_modal()
+            st.session_state["sunburst_news_modal"] = None
 
