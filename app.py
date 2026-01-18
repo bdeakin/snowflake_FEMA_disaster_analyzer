@@ -5,9 +5,13 @@ from typing import Dict, List, Tuple
 
 import pandas as pd
 import streamlit as st
-import plotly.express as px
-import plotly.graph_objects as go
-from streamlit_plotly_events import plotly_events
+try:
+    from streamlit import st_autorefresh
+except Exception:
+    st_autorefresh = None
+import folium
+from folium.features import DivIcon
+from streamlit_folium import st_folium
 from dotenv import load_dotenv
 
 from src.snowflake_client import fetch_dataframe, fetch_dataframe_plain
@@ -23,7 +27,7 @@ DEBUG_LOG_PATH = os.path.join(
     "debug.log",
 )
 DEBUG_SESSION_ID = "debug-session"
-DEBUG_RUN_ID = "post-fix-11"
+DEBUG_RUN_ID = "zoom-debug-1"
 
 
 def _debug_log(message: str, data: Dict[str, object], location: str, hypothesis_id: str) -> None:
@@ -831,7 +835,13 @@ FROM summary
     return sql, params
 
 
-def build_map_figure(df: pd.DataFrame, view_mode: str, map_zoom: float) -> px.scatter_mapbox:
+def build_folium_map(
+    df: pd.DataFrame,
+    view_mode: str,
+    map_zoom: float,
+    map_center: Tuple[float, float],
+    info_target: Dict[str, object],
+) -> folium.Map:
     df = df.copy()
     if "latitude" in df.columns:
         df["latitude"] = pd.to_numeric(df["latitude"], errors="coerce")
@@ -841,82 +851,51 @@ def build_map_figure(df: pd.DataFrame, view_mode: str, map_zoom: float) -> px.sc
         df["count"] = pd.to_numeric(df["count"], errors="coerce").fillna(0).astype(int)
     if "latitude" in df.columns and "longitude" in df.columns:
         df = df.dropna(subset=["latitude", "longitude"])
-    if df.empty:
-        st.info("No records returned for the selected filters.")
-        return
 
-    mapbox_token = _get_env("MAPBOX_ACCESS_TOKEN", "").strip()
-    mapbox_style = "open-street-map"
-    if mapbox_token:
-        px.set_mapbox_access_token(mapbox_token)
-
-    center_lat = float(df["latitude"].mean()) if "latitude" in df.columns else 37.8
-    center_lon = float(df["longitude"].mean()) if "longitude" in df.columns else -96.0
+    center_lat, center_lon = map_center
+    if not center_lat or not center_lon:
+        center_lat = float(df["latitude"].mean()) if "latitude" in df.columns else 37.8
+        center_lon = float(df["longitude"].mean()) if "longitude" in df.columns else -96.0
     if pd.isna(center_lat) or pd.isna(center_lon):
         center_lat, center_lon = 37.8, -96.0
 
-    if view_mode == "aggregated":
-        hover_fields = {
-            "count": True,
-            "type_year_summary": True,
-        }
-        if "metro_name" in df.columns:
-            hover_fields["metro_name"] = True
-        fig = px.scatter_mapbox(
-            df,
-            lat="latitude",
-            lon="longitude",
-            size="count",
-            size_max=40,
-            zoom=map_zoom,
-            center={"lat": center_lat, "lon": center_lon},
-            height=600,
-            color="count",
-            color_continuous_scale=["#9a9a9a", "#ff0000"],
-            hover_data=hover_fields,
-        )
-    else:
-        if "incident_type" in df.columns:
-            incident_series = df["incident_type"]
-        else:
-            incident_series = pd.Series([""] * len(df))
-        df["icon"] = incident_series.apply(_incident_icon)
-        customdata = df[
-            [
-                "disaster_declaration_name",
-                "incident_type",
-                "disaster_begin_date",
-                "disaster_end_date",
-            ]
-        ].fillna("")
-        fig = go.Figure(
-            go.Scattermapbox(
-                lat=df["latitude"],
-                lon=df["longitude"],
-                mode="markers+text",
-                text=df["icon"],
-                textposition="middle center",
-                marker=dict(size=22, color="rgba(0,0,0,0)"),
-                customdata=customdata,
-                hovertemplate=(
-                    "<b>%{customdata[0]}</b><br>"
-                    "Type: %{customdata[1]}<br>"
-                    "Begin: %{customdata[2]}<br>"
-                    "End: %{customdata[3]}<extra></extra>"
-                ),
-            )
-        )
-        fig.update_layout(
-            mapbox_style=mapbox_style,
-            mapbox_zoom=map_zoom,
-            mapbox_center={"lat": center_lat, "lon": center_lon},
-            height=600,
-            margin=dict(l=0, r=0, t=0, b=0),
-        )
-        return fig
+    zoom_start = max(2, min(10, int(round(map_zoom))))
+    fmap = folium.Map(location=[center_lat, center_lon], zoom_start=zoom_start, tiles="OpenStreetMap")
 
-    fig.update_layout(mapbox_style=mapbox_style, margin=dict(l=0, r=0, t=0, b=0))
-    return fig
+    if df.empty:
+        return fmap
+
+    if view_mode == "aggregated":
+        max_count = int(df["count"].max()) if "count" in df.columns else 1
+        min_count = int(df["count"].min()) if "count" in df.columns else 0
+        for _, row in df.iterrows():
+            count = int(row.get("count", 0))
+            scale = (count - min_count) / (max_count - min_count) if max_count != min_count else 0
+            radius = max(4, min(32, 6 + scale * 26))
+            red = int(255)
+            green = int(200 - scale * 200)
+            blue = int(200 - scale * 200)
+            color = f"#{red:02x}{green:02x}{blue:02x}"
+            name = row.get("metro_name", "")
+            summary = row.get("type_year_summary", "")
+            tooltip = None
+            popup = None
+            folium.CircleMarker(
+                location=[row["latitude"], row["longitude"]],
+                radius=radius,
+                color=color,
+                fill=True,
+                fill_opacity=0.6,
+            ).add_to(fmap)
+    else:
+        for _, row in df.iterrows():
+            icon = _incident_icon(row.get("incident_type"))
+            folium.Marker(
+                location=[row["latitude"], row["longitude"]],
+                icon=DivIcon(html=f"<div style='font-size:22px'>{icon}</div>"),
+            ).add_to(fmap)
+
+    return fmap
 
 
 
@@ -951,6 +930,17 @@ def _grid_size_for_bounds(
     lon_span = max(max_lon - min_lon, 0.1)
     raw = (lat_span * lon_span / max(target_clusters, 1)) ** 0.5
     return float(min(max(raw, min_size), max_size))
+
+
+def _center_from_bounds(bounds: Dict[str, Dict[str, float]]) -> Tuple[float, float]:
+    try:
+        sw = bounds.get("_southWest", {})
+        ne = bounds.get("_northEast", {})
+        lat = (sw.get("lat", 0.0) + ne.get("lat", 0.0)) / 2.0
+        lon = (sw.get("lng", 0.0) + ne.get("lng", 0.0)) / 2.0
+        return float(lat), float(lon)
+    except Exception:
+        return 37.8, -96.0
 
 
 def _incident_icon(incident_type: str) -> str:
@@ -991,32 +981,6 @@ def _cluster_bounds(latitude: float, longitude: float, grid_size: float) -> Tupl
     return (latitude - half, latitude + half, longitude - half, longitude + half)
 
 
-def _extract_click(events: object, df: pd.DataFrame) -> Dict[str, float]:
-    if not events or df.empty or not isinstance(events, dict):
-        return None
-    points = None
-    if "clickData" in events and isinstance(events["clickData"], dict):
-        points = events["clickData"].get("points")
-    elif "points" in events:
-        points = events.get("points")
-    if not points:
-        return None
-    idx = points[0].get("pointIndex", points[0].get("pointNumber"))
-    if idx is None:
-        return None
-    try:
-        row = df.iloc[int(idx)]
-    except Exception:
-        return None
-    grid_size = row.get("grid_size") if "grid_size" in row else None
-    return {
-        "latitude": float(row.get("latitude", 0.0)),
-        "longitude": float(row.get("longitude", 0.0)),
-        "grid_size": float(grid_size) if grid_size else 0.0,
-        "count": int(row.get("count", 0)),
-    }
-
-
 st.title("FEMA Disaster Analyzer")
 
 with st.sidebar:
@@ -1052,37 +1016,47 @@ with st.sidebar:
     states = st.multiselect("State", options=state_options)
     incidents = st.multiselect("Incident type", options=incident_options)
     st.subheader("Zoom")
-    zoom_options = [
-        "FEMA Region ID",
-        "Major Metropolitan Area",
-        "Metropolitan Statistical Area",
-    ]
-    zoom_map = {
-        "FEMA Region ID": 3.0,
-        "Major Metropolitan Area": 5.0,
-        "Metropolitan Statistical Area": 8.0,
-    }
-    current_zoom = float(st.session_state.get("map_zoom", 3.0))
-    current_label = next(
-        (label for label, value in zoom_map.items() if value == current_zoom),
-        "FEMA Region ID",
-    )
-    selected_label = st.selectbox("Zoom level", zoom_options, index=zoom_options.index(current_label))
-    selected_zoom = zoom_map[selected_label]
-    if selected_zoom != current_zoom:
-        st.session_state["map_zoom"] = selected_zoom
-        st.rerun()
+    st.caption("Zoom tier is determined by the map zoom level.")
 
 st.subheader("Map")
 use_agg = True
 view_mode = "aggregated"
-render_status = st.progress(0, text="Preparing query...")
 query_start = time.time()
 try:
     state_ids = [state_name_to_id[name] for name in states if name in state_name_to_id]
     state_names = list(states)
     bounds = (24.0, 50.0, -125.0, -66.0)
+    bounds_value = st.session_state.get("map_bounds")
+    if isinstance(bounds_value, dict):
+        try:
+            sw = bounds_value.get("_southWest", {})
+            ne = bounds_value.get("_northEast", {})
+            bounds = (
+                float(sw.get("lat", 24.0)),
+                float(ne.get("lat", 50.0)),
+                float(sw.get("lng", -125.0)),
+                float(ne.get("lng", -66.0)),
+            )
+        except Exception:
+            bounds = (24.0, 50.0, -125.0, -66.0)
+    if "map_center" not in st.session_state:
+        st.session_state["map_center"] = (37.8, -96.0)
+    if "info_box" not in st.session_state:
+        st.session_state["info_box"] = {}
+    if "last_zoom_event_ts" not in st.session_state:
+        st.session_state["last_zoom_event_ts"] = 0.0
     map_zoom = float(st.session_state.get("map_zoom", 3.0))
+    # #region agent log
+    _debug_log(
+        "map zoom from session",
+        {
+            "map_zoom": map_zoom,
+            "last_zoom_event_ts": st.session_state.get("last_zoom_event_ts"),
+        },
+        "app.py:map",
+        "H3",
+    )
+    # #endregion agent log
     if map_zoom <= 4:
         view_mode = "aggregated"
         grid_size = 8.0
@@ -1092,9 +1066,21 @@ try:
         grid_size = 3.0
         view_label = "Major metros"
     else:
-        view_mode = "aggregated"
+        view_mode = "detailed"
         grid_size = 1.0
-        view_label = "MSA clusters"
+        view_label = "Individual incidents"
+    # #region agent log
+    _debug_log(
+        "map zoom tier",
+        {
+            "map_zoom": map_zoom,
+            "view_mode": view_mode,
+            "view_label": view_label,
+        },
+        "app.py:map",
+        "H3",
+    )
+    # #endregion agent log
     st.session_state["last_view_mode"] = view_mode
     st.session_state["last_grid_size"] = grid_size
     st.session_state["last_bounds"] = bounds
@@ -1112,11 +1098,34 @@ try:
     )
     # #endregion agent log
     use_agg = view_mode == "aggregated"
+    if view_mode == "aggregated":
+        st.caption(f"View mode: {view_label} (click a cluster for details)")
+    else:
+        st.caption(f"View mode: {view_label}")
+    st.caption(f"Zoom: {map_zoom:.2f}")
     filters_key = (tuple(state_ids), tuple(incidents), year_range, view_mode, round(grid_size, 2))
     if st.session_state.get("filters_key") != filters_key:
         st.session_state["filters_key"] = filters_key
         st.session_state.pop("selected_cluster", None)
         st.session_state.pop("cluster_detail_df", None)
+        st.session_state.pop("cached_df", None)
+        st.session_state.pop("cached_view_mode", None)
+        st.session_state["info_box"] = {}
+        st.session_state["render_progress"] = 0
+        st.session_state["render_progress_text"] = "Preparing query..."
+    render_status = st.progress(
+        int(st.session_state.get("render_progress", 0)),
+        text=st.session_state.get("render_progress_text", "Preparing query..."),
+    )
+
+    def _advance_progress(value: int, text: str) -> None:
+        current = int(st.session_state.get("render_progress", 0))
+        if value > current:
+            st.session_state["render_progress"] = value
+            st.session_state["render_progress_text"] = text
+            render_status.progress(value, text=text)
+        else:
+            render_status.progress(current, text=st.session_state.get("render_progress_text", text))
     # #region agent log
     _debug_log(
         "map query prep",
@@ -1134,101 +1143,232 @@ try:
         "OCSP1",
     )
     # #endregion agent log
-    if view_mode == "aggregated":
-        st.caption(f"View mode: {view_label} (click a cluster for details)")
-        st.caption(f"Zoom: {map_zoom:.2f}")
-        render_status.progress(40, text="Loading aggregated data...")
-        if map_zoom <= 4:
-            region_sql, region_params = build_region_query(
-                TABLE_FQN,
-                state_ids,
-                incidents,
-                year_range,
-            )
-            df = fetch_dataframe_plain(region_sql, params=region_params)
-            df.columns = [str(col).lower() for col in df.columns]
-        elif map_zoom < 7:
-            metro_sql, metro_params = build_metro_query(
-                DETAIL_VIEW_FQN,
-                state_names,
-                incidents,
-                year_range,
-                40,
-                200.0,
-                METRO_POINTS,
-            )
-            df = fetch_dataframe_plain(metro_sql, params=metro_params)
-            df.columns = [str(col).lower() for col in df.columns]
-        else:
-            msa_sql, msa_params = build_metro_query(
-                DETAIL_VIEW_FQN,
-                state_names,
-                incidents,
-                year_range,
-                300,
-                80.0,
-                METRO_POINTS + MID_METRO_POINTS,
-            )
-            df = fetch_dataframe_plain(msa_sql, params=msa_params)
-            df.columns = [str(col).lower() for col in df.columns]
-    else:
-        st.caption(f"View mode: {view_label}")
-        st.caption(f"Zoom: {map_zoom:.2f}")
-        render_status.progress(40, text="Loading incident data...")
-        detail_sql, detail_params = build_cluster_detail_query(
-            DETAIL_VIEW_FQN, state_names, incidents, year_range, 500, bounds=bounds
-        )
-        df = fetch_dataframe_plain(detail_sql, params=detail_params)
-        df.columns = [str(col).lower() for col in df.columns]
-    if df.empty:
-        st.info("No records returned for the selected filters.")
-    else:
-        render_status.progress(75, text="Rendering map...")
-        df = df.reset_index(drop=True)
-        fig = build_map_figure(df, view_mode, map_zoom)
-        events = None
-        try:
-            events = plotly_events(
-                fig,
-                click_event=True,
-                hover_event=False,
-                select_event=False,
-                override_height=600,
-                override_width="100%",
-                key="mapbox-plot",
-            )
-        except TypeError:
-            events = plotly_events(
-                fig,
-                click_event=True,
-                hover_event=False,
-                select_event=False,
-                override_height=600,
-                override_width="100%",
-                key="mapbox-plot",
-            )
+    zoom_waiting = False
+    if time.time() - st.session_state.get("last_zoom_event_ts", 0.0) < 0.5:
+        zoom_waiting = True
+        st.caption("Waiting for map to settle...")
+        if st_autorefresh:
+            st_autorefresh(interval=500, key="zoom-debounce")
         # #region agent log
         _debug_log(
-            "plotly events received",
+            "zoom debounce waiting",
             {
-                "events_type": type(events).__name__,
-                "events_keys": list(events.keys()) if isinstance(events, dict) else None,
-                "events_len": len(events) if isinstance(events, list) else None,
+                "last_zoom_event_ts": st.session_state.get("last_zoom_event_ts"),
+                "now": time.time(),
+                "cached_view_mode": st.session_state.get("cached_view_mode"),
+                "cached_df": st.session_state.get("cached_df") is not None,
             },
             "app.py:map",
-            "ZOOM3",
+            "H3",
         )
         # #endregion agent log
-        if view_mode == "aggregated" and events:
-            clicked = _extract_click(events, df)
-            if clicked:
-                if not clicked.get("grid_size"):
-                    clicked["grid_size"] = grid_size
-                if clicked != st.session_state.get("selected_cluster"):
-                    st.session_state["selected_cluster"] = clicked
-                    st.session_state["cluster_detail_df"] = None
-        if view_mode == "aggregated" and st.session_state.get("selected_cluster") and st.session_state.get("cluster_detail_df") is None:
-            render_status.progress(90, text="Loading cluster details...")
+
+    cached_df = st.session_state.get("cached_df")
+    cached_view_mode = st.session_state.get("cached_view_mode")
+    if zoom_waiting and cached_df is not None and cached_view_mode == view_mode:
+        df = cached_df
+    else:
+        if view_mode == "aggregated":
+            _advance_progress(20, "Loading aggregated data...")
+            if map_zoom <= 4:
+                region_sql, region_params = build_region_query(
+                    TABLE_FQN,
+                    state_ids,
+                    incidents,
+                    year_range,
+                )
+                df = fetch_dataframe_plain(region_sql, params=region_params)
+                df.columns = [str(col).lower() for col in df.columns]
+            elif map_zoom < 7:
+                metro_sql, metro_params = build_metro_query(
+                    DETAIL_VIEW_FQN,
+                    state_names,
+                    incidents,
+                    year_range,
+                    40,
+                    200.0,
+                    METRO_POINTS,
+                )
+                df = fetch_dataframe_plain(metro_sql, params=metro_params)
+                df.columns = [str(col).lower() for col in df.columns]
+            else:
+                msa_sql, msa_params = build_metro_query(
+                    DETAIL_VIEW_FQN,
+                    state_names,
+                    incidents,
+                    year_range,
+                    300,
+                    80.0,
+                    METRO_POINTS + MID_METRO_POINTS,
+                )
+                df = fetch_dataframe_plain(msa_sql, params=msa_params)
+                df.columns = [str(col).lower() for col in df.columns]
+        else:
+            _advance_progress(20, "Loading incident data...")
+            detail_sql, detail_params = build_cluster_detail_query(
+                DETAIL_VIEW_FQN, state_names, incidents, year_range, 500, bounds=bounds
+            )
+            df = fetch_dataframe_plain(detail_sql, params=detail_params)
+            df.columns = [str(col).lower() for col in df.columns]
+        st.session_state["cached_df"] = df
+        st.session_state["cached_view_mode"] = view_mode
+    if df.empty:
+        st.session_state["last_total_count"] = 0
+        st.info("No records returned for the selected filters.")
+    else:
+        _advance_progress(60, "Rendering map...")
+        df = df.reset_index(drop=True)
+        fmap = build_folium_map(
+            df, view_mode, map_zoom, st.session_state["map_center"], st.session_state["info_box"]
+        )
+        folium_state = st_folium(
+            fmap,
+            height=600,
+            width=1000,
+            returned_objects=["last_object_clicked", "last_clicked", "bounds", "zoom", "center"],
+        )
+        # #region agent log
+        _debug_log(
+            "folium state",
+            {
+                "has_state": folium_state is not None,
+                "state_keys": list(folium_state.keys()) if isinstance(folium_state, dict) else None,
+                "zoom": folium_state.get("zoom") if isinstance(folium_state, dict) else None,
+                "bounds": folium_state.get("bounds") if isinstance(folium_state, dict) else None,
+            },
+            "app.py:map",
+            "FOL1",
+        )
+        # #endregion agent log
+        if folium_state:
+            zoom_value = folium_state.get("zoom")
+            if zoom_value is not None:
+                zoom_value = float(zoom_value)
+                # #region agent log
+                _debug_log(
+                    "folium zoom",
+                    {"zoom_value": zoom_value, "prev_zoom": st.session_state.get("map_zoom")},
+                    "app.py:map",
+                    "FOL1",
+                )
+                # #endregion agent log
+                now = time.time()
+                st.session_state["last_zoom_event_ts"] = now
+                if abs(zoom_value - float(st.session_state.get("map_zoom", 0.0))) > 0.01:
+                    # #region agent log
+                    _debug_log(
+                        "apply raw zoom",
+                        {
+                            "zoom_value": zoom_value,
+                            "map_zoom_before": st.session_state.get("map_zoom"),
+                            "last_zoom_event_ts": st.session_state.get("last_zoom_event_ts"),
+                        },
+                        "app.py:map",
+                        "H1",
+                    )
+                    # #endregion agent log
+                    st.session_state["map_zoom"] = zoom_value
+            bounds_value = folium_state.get("bounds")
+            if bounds_value:
+                # #region agent log
+                _debug_log(
+                    "folium bounds",
+                    {"bounds_value": bounds_value},
+                    "app.py:map",
+                    "FOL1",
+                )
+                # #endregion agent log
+                st.session_state["map_bounds"] = bounds_value
+                center_from_bounds = _center_from_bounds(bounds_value)
+                # #region agent log
+                _debug_log(
+                    "center from bounds",
+                    {"center_from_bounds": center_from_bounds},
+                    "app.py:map",
+                    "FOL2",
+                )
+                # #endregion agent log
+                st.session_state["map_center"] = center_from_bounds
+            center_value = folium_state.get("center")
+            if center_value and isinstance(center_value, dict):
+                try:
+                    # #region agent log
+                    _debug_log(
+                        "folium center",
+                        {"center_value": center_value},
+                        "app.py:map",
+                        "FOL2",
+                    )
+                    # #endregion agent log
+                    st.session_state["map_center"] = (
+                        float(center_value.get("lat")),
+                        float(center_value.get("lng")),
+                    )
+                except Exception:
+                    pass
+            if view_mode == "aggregated":
+                clicked = folium_state.get("last_object_clicked") or folium_state.get("last_clicked")
+                # #region agent log
+                _debug_log(
+                    "folium click",
+                    {"clicked": clicked},
+                    "app.py:map",
+                    "FOL2",
+                )
+                # #endregion agent log
+                if clicked and "latitude" in df.columns and "longitude" in df.columns:
+                    lat = clicked.get("lat")
+                    lon = clicked.get("lng")
+                    if lat is not None and lon is not None:
+                        distances = (df["latitude"] - lat) ** 2 + (df["longitude"] - lon) ** 2
+                        idx = int(distances.idxmin())
+                        row = df.iloc[idx]
+                        selected = {
+                            "latitude": float(row.get("latitude", lat)),
+                            "longitude": float(row.get("longitude", lon)),
+                            "grid_size": float(row.get("grid_size", grid_size)),
+                            "count": int(row.get("count", 0)),
+                            "type_year_summary": row.get("type_year_summary", ""),
+                            "metro_name": row.get("metro_name", ""),
+                        }
+                        # #region agent log
+                        _debug_log(
+                            "cluster selection",
+                            {"selected": selected},
+                            "app.py:map",
+                            "FOL2",
+                        )
+                        # #endregion agent log
+                        if selected != st.session_state.get("selected_cluster"):
+                            st.session_state["selected_cluster"] = selected
+                            st.session_state["cluster_detail_df"] = None
+                            st.session_state["info_box"] = selected
+            elif view_mode == "detailed":
+                clicked = folium_state.get("last_object_clicked") or folium_state.get("last_clicked")
+                if clicked and "latitude" in df.columns and "longitude" in df.columns:
+                    lat = clicked.get("lat")
+                    lon = clicked.get("lng")
+                    if lat is not None and lon is not None:
+                        distances = (df["latitude"] - lat) ** 2 + (df["longitude"] - lon) ** 2
+                        idx = int(distances.idxmin())
+                        row = df.iloc[idx]
+                        st.session_state["info_box"] = {
+                            "latitude": float(row.get("latitude", lat)),
+                            "longitude": float(row.get("longitude", lon)),
+                            "incident_type": row.get("incident_type", ""),
+                            "disaster_declaration_name": row.get("disaster_declaration_name", ""),
+                            "disaster_begin_date": row.get("disaster_begin_date", ""),
+                            "disaster_end_date": row.get("disaster_end_date", ""),
+                            "state_name": row.get("state_name", ""),
+                            "count": 1,
+                        }
+        if (
+            not zoom_waiting
+            and view_mode == "aggregated"
+            and st.session_state.get("selected_cluster")
+            and st.session_state.get("cluster_detail_df") is None
+        ):
+            _advance_progress(90, "Loading cluster details...")
             selected = st.session_state["selected_cluster"]
             cluster_bounds = _cluster_bounds(
                 selected["latitude"], selected["longitude"], selected["grid_size"]
@@ -1244,7 +1384,14 @@ try:
             detail_df = fetch_dataframe_plain(detail_sql, params=detail_params)
             detail_df.columns = [str(col).lower() for col in detail_df.columns]
             st.session_state["cluster_detail_df"] = detail_df
-    render_status.progress(100, text="Render complete.")
+        if view_mode == "aggregated":
+            if "count" in df.columns:
+                st.session_state["last_total_count"] = int(df["count"].sum())
+            else:
+                st.session_state["last_total_count"] = int(len(df))
+        else:
+            st.session_state["last_total_count"] = int(len(df))
+    _advance_progress(100, "Render complete.")
 except Exception as exc:
     if "certificate is revoked" in str(exc).lower():
         st.error(
@@ -1259,6 +1406,44 @@ except Exception as exc:
 finally:
     elapsed = time.time() - query_start
     st.caption(f"Query time: {elapsed:.2f}s")
+
+with st.container():
+    st.subheader("Map Info")
+    total_count = int(st.session_state.get("last_total_count", 0))
+    st.caption(f"Total disasters in view: {total_count}")
+    current_zoom = float(st.session_state.get("map_zoom", 3.0))
+    if current_zoom <= 4:
+        zoom_label = "FEMA Region ID"
+    elif current_zoom < 7:
+        zoom_label = "Major Metropolitan Area"
+    else:
+        zoom_label = "Metropolitan Statistical Area"
+    st.caption(f"Zoom tier: {zoom_label}")
+    info_box = st.session_state.get("info_box") or {}
+    if not info_box:
+        st.info("Click a centroid or incident to see details.")
+    else:
+        if st.session_state.get("last_view_mode") == "aggregated":
+            name = info_box.get("metro_name") or "Selected cluster"
+            st.text(f"{name} (count: {info_box.get('count', 0)})")
+            summary = info_box.get("type_year_summary")
+            if summary:
+                st.text(f"Type/year summary: {summary}")
+        else:
+            st.text(
+                f"{info_box.get('disaster_declaration_name','')} "
+                f"({info_box.get('incident_type','')})"
+            )
+            st.text(
+                "Dates: "
+                f"{info_box.get('disaster_begin_date','')} - "
+                f"{info_box.get('disaster_end_date','')}"
+            )
+            st.text(f"State: {info_box.get('state_name','')}")
+            st.text(
+                "Location: "
+                f"{info_box.get('latitude','')}, {info_box.get('longitude','')}"
+            )
 
 with st.expander("Map Status", expanded=False):
     status_payload = {
