@@ -513,3 +513,10 @@ Format:
   outcome: Discovery completed using OCSP flags
   next: Update silver/gold fields
 
+- timestamp: 2026-01-18 01:10
+  goal: Enhance filters and cube view
+  prompt: |
+    Enhance the filter pane to include incident type. Also enhance the filter pane to include disaster start and end dates which can be explicitly selected. Replace the existing cube view which shows circles with a tabular view having incident types as rows and bins as columns. The bins should be sized based on the period of the returned record set (years for multi-year record sets, months for multi-month record sets, weeks for multi-week record sets). The representation of the data should be an actual cube rather than a circle. When clicking on one of the cubes, the drilldown should automatically focus on the map location for that drilldown.
+  outcome: Implemented filters and cube heatmap with square markers
+  next: User validation
+
