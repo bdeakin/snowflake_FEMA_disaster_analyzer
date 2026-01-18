@@ -1,0 +1,515 @@
+# Prompts Log
+
+Format:
+- timestamp: YYYY-MM-DD HH:MM
+  goal: <short goal>
+  prompt: |
+    <verbatim prompt>
+  outcome: <what happened>
+  next: <next action>
+
+- timestamp: 2026-01-18 00:00
+  goal: Define new FEMA explorer plan
+  prompt: |
+    Cursor Plan Mode: FEMA Disasters Explorer (Snowflake Public Data → Dynamic Tables → Choropleth + Cube Summary + Drilldown)
+    Goals
+    
+    Build a Streamlit application that visualizes FEMA disaster data sourced from Snowflake Public Data.
+    
+    Provide a fast “overview → investigate → drilldown” experience:
+    
+    Viewport 1: US state choropleth colored by disaster count
+    
+    Viewport 2: State-selected cube summary grid by disaster type and adaptive time period
+    
+    Drilldown: Cube-selected map of individual disasters as icons with hover details
+    
+    Use Snowflake Dynamic Tables to create reproducible, performant Silver (curated) and Gold (aggregated) datasets.
+    
+    Support performant rendering by defaulting the time filter to 2023–2025.
+    
+    Non-Goals
+    
+    No Cortex AI, LLM features, RAG, embeddings, etc.
+    
+    No real-time ingestion / streaming pipelines.
+    
+    No production-grade auth / user management.
+    
+    No high-resolution incident coordinates: FEMA lacks direct lat/lon; we will use county centroids.
+    
+    No full GIS polygon overlays beyond state choropleths.
+    
+    Constraints / Hard Requirements
+    
+    Snowflake connection must use environment variables:
+    
+    SNOWFLAKE_ACCOUNT=BIUHBZF-WFC89039
+    
+    SNOWFLAKE_ROLE=ACCOUNTADMIN
+    
+    SNOWFLAKE_WAREHOUSE=COMPUTE_WH
+    
+    SNOWFLAKE_DATABASE=SNOWFLAKE_PUBLIC_DATA_PAID
+    
+    SNOWFLAKE_SCHEMA=PUBLIC_DATA
+    
+    FEMA source tables are in SNOWFLAKE_PUBLIC_DATA_PAID.PUBLIC_DATA and include:
+    
+    FEMA_DISASTER_DECLARATION_INDEX
+    
+    FEMA_DISASTER_DECLARATION_INDEX_PIT
+    
+    FEMA_DISASTER_DECLARATION_AREAS_INDEX
+    
+    FEMA_DISASTER_DECLARATION_AREAS_INDEX_PIT
+    
+    FEMA_MISSION_ASSIGNMENT_INDEX
+    
+    FEMA_MISSION_ASSIGNMENT_INDEX_PIT
+    
+    FEMA_NATIONAL_FLOOD_INSURANCE_PROGRAM_CLAIM_INDEX
+    
+    FEMA_NATIONAL_FLOOD_INSURANCE_PROGRAM_CLAIM_INDEX_PIT
+    
+    FEMA_NATIONAL_FLOOD_INSURANCE_PROGRAM_POLICY_INDEX
+    
+    FEMA_NATIONAL_FLOOD_INSURANCE_PROGRAM_POLICY_INDEX_PIT
+    
+    FEMA_REGION_INDEX
+    
+    FEMA_REGION_INDEX_PIT
+    
+    Join discovery is mandatory. Do not assume keys.
+    
+    Incidents do not have lat/long; they have county GeoIDs (likely county FIPS/GEOID). Map drilldown points must be plotted using county centroids.
+    
+    The build process must download a county centroid CSV and load it into Snowflake as reference data.
+    
+    The project must drop and recreate the ANALYTICS database as part of setup:
+    
+    DROP DATABASE IF EXISTS ANALYTICS;
+    
+    recreate schemas ANALYTICS.REF, ANALYTICS.SILVER, ANALYTICS.GOLD
+    
+    must be clearly warned/documented in README
+    
+    Must maintain prompts.md with all prompts used during build.
+    
+    Success Criteria (Definition of Done)
+    
+    Running setup SQL + scripts produces a clean environment from scratch (idempotent):
+    
+    ANALYTICS recreated
+    
+    county centroids downloaded + loaded
+    
+    Silver + Gold objects created
+    
+    Streamlit app loads and works end-to-end:
+    
+    Year range filter defaults to 2023–2025
+    
+    Choropleth renders quickly and correctly
+    
+    Clicking a state shows cube summary grid
+    
+    Clicking a cube switches map to point view and shows hover details
+    
+    Drilldown view uses county GeoIDs mapped to centroids from reference dataset.
+    
+    Repo contains all required deliverables including prompts.md, discovery SQL, pipeline SQL, and scripts.
+    
+    Application Requirements (UI and Interaction)
+    Global Filter
+    
+    Year range slider
+    
+    Default: start year 2023, end year 2025
+    
+    Filters all queries to control data volume/performance
+    
+    Viewport 1 — State Choropleth
+    
+    US state choropleth
+    
+    Metric: total number of disasters in filtered dataset
+    
+    Color scale: light red → bright red by count
+    
+    On click: sets selected_state
+    
+    Viewport 2 — Cube Summary (below map)
+    
+    Shown only when a state is selected.
+    
+    Grouped by:
+    
+    Disaster type (incident type)
+    
+    Period bucket (grain selected dynamically)
+    
+    Adaptive period logic
+    
+    multi-year selection → yearly
+    
+    multi-month selection → monthly
+    
+    multi-week selection → weekly
+    
+    Visualization:
+    
+    table-like “cube grid”
+    
+    cube size proportional to count
+    
+    cube color proportional to count (light red → bright red)
+    
+    On click: sets selected_disaster_type and selected_period_bucket
+    
+    Drilldown Mode — County-Centroid Icons
+    
+    Triggered when a cube is selected.
+    
+    Map switches from choropleth to a scatter-icon plot
+    
+    Each point plotted at:
+    
+    county centroid lat/lon from reference dataset
+    
+    Hover tooltip shows:
+    
+    disaster id / number
+    
+    declaration/incident date
+    
+    disaster type
+    
+    county name
+    
+    state
+    
+    title/name (if available)
+    
+    Handle overlap:
+    
+    aggregate by county (count) OR jitter
+    
+    Data Model and Pipeline
+    Discovery Requirements
+    
+    All join/key inference must be done through discovery. Must output:
+    
+    selected base tables
+    
+    join keys
+    
+    which table contains county GeoIDs
+    
+    how PIT tables work, whether/how used
+    
+    All discovery SQL stored under:
+    
+    /sql/discovery/*.sql
+    
+    Reference Data
+    
+    Download county centroids CSV during build
+    
+    Script: scripts/download_county_centroids.py
+    
+    Output: data/county_centroids.csv
+    
+    Load into:
+    
+    ANALYTICS.REF.COUNTY_CENTROIDS
+    
+    Minimum columns:
+    
+    county_fips (string 5-digit)
+    
+    county_name
+    
+    state_fips
+    
+    optionally state_abbr
+    
+    centroid_lat float
+    
+    centroid_lon float
+    
+    Silver Layer (curated, drilldown-friendly)
+    
+    Create:
+    
+    ANALYTICS.SILVER.FCT_DISASTERS (DT or view)
+    
+    Grain:
+    
+    one row per (disaster, county)
+    
+    Must include:
+    
+    disaster id
+    
+    state
+    
+    county FIPS/GEOID
+    
+    centroid lat/lon (join to REF)
+    
+    disaster type
+    
+    relevant dates
+    
+    derived period buckets: year/month/week
+    
+    Gold Layer (fast aggregates)
+    
+    Create DTs for:
+    
+    Choropleth:
+    
+    ANALYTICS.GOLD.DISASTERS_BY_STATE
+    
+    Cube summaries at multiple grains:
+    
+    ANALYTICS.GOLD.CUBES_BY_STATE_TYPE_YEAR
+    
+    ANALYTICS.GOLD.CUBES_BY_STATE_TYPE_MONTH
+    
+    ANALYTICS.GOLD.CUBES_BY_STATE_TYPE_WEEK
+    
+    App chooses the correct one based on selection span.
+    
+    Architecture Overview
+    Snowflake
+    
+    Source: SNOWFLAKE_PUBLIC_DATA_PAID.PUBLIC_DATA
+    
+    Derived: ANALYTICS
+    
+    REF (county centroids)
+    
+    SILVER (curated fact)
+    
+    GOLD (aggregates)
+    
+    Repo Structure
+    prompts.md
+    .env.example
+    requirements.txt
+    README.md
+    sql/
+      discovery/
+      pipeline/
+    scripts/
+      download_county_centroids.py
+      load_county_centroids_to_snowflake.py
+    app/
+      app.py
+      snowflake_conn.py
+      queries.py
+      viz.py
+    data/
+      county_centroids.csv   (generated)
+    
+    Implementation Phases
+    Phase 0 — Project scaffolding + prompts discipline
+    
+    Create repo structure
+    
+    Create .env.example
+    
+    Create prompts.md
+    
+    Acceptance
+    
+    Repo skeleton exists
+    
+    prompts.md format established
+    
+    Phase 1 — Discovery (keys, joins, PIT interpretation, county GeoID)
+    
+    Inspect columns and sample data
+    
+    Determine join keys and validate cardinality
+    
+    Identify county GeoID fields
+    
+    Decide whether PIT is needed or ignore for v1
+    
+    Acceptance
+    
+    Discovery SQL saved
+    
+    README includes join map summary
+    
+    Phase 2 — Setup pipeline (destructive ANALYTICS rebuild)
+    
+    Create /sql/pipeline/00_setup.sql:
+    
+    drop + recreate ANALYTICS
+    
+    create schemas REF/SILVER/GOLD
+    
+    Document WARNING in README
+    
+    Acceptance
+    
+    Running setup script resets everything cleanly
+    
+    Phase 3 — County centroid download + Snowflake load
+    
+    scripts/download_county_centroids.py
+    
+    download, validate, save to data/
+    
+    scripts/load_county_centroids_to_snowflake.py
+    
+    create table and load CSV
+    
+    Acceptance
+    
+    ANALYTICS.REF.COUNTY_CENTROIDS populated and queryable
+    
+    Phase 4 — Silver curated dataset
+    
+    Build ANALYTICS.SILVER.FCT_DISASTERS with:
+    
+    FEMA data joined to areas
+    
+    county GeoID extracted
+    
+    join to county centroids
+    
+    Store derived buckets
+    
+    Acceptance
+    
+    Filters 2023–2025 return manageable row counts
+    
+    county centroid join coverage documented
+    
+    Phase 5 — Gold DTs
+    
+    Build gold aggregates for:
+    
+    choropleth
+    
+    cubes at year/month/week grains
+    
+    Acceptance
+    
+    Fast aggregate queries
+    
+    Results reconcile with Silver spot checks
+    
+    Phase 6 — Streamlit app UI
+    
+    Implement:
+    
+    year range filter default 2023–2025
+    
+    choropleth map
+    
+    state click selection
+    
+    cube grid (adaptive grain)
+    
+    cube click drilldown (county centroid scatter)
+    
+    Acceptance
+    
+    End-to-end interactions function correctly
+    
+    Drilldown hover shows required fields
+    
+    Risks & Mitigations
+    
+    GeoID not county FIPS (could be another code)
+    
+    discovery must confirm
+    
+    centroid mapping logic must normalize GeoID → county_fips
+    
+    County join yields multiple counties per disaster
+    
+    treat as one row per disaster+county (expected)
+    
+    PIT tables cause ambiguity
+    
+    v1 may ignore PIT and use INDEX only
+    
+    document in README
+    
+    Data volume large
+    
+    default year range 2023–2025 mandatory
+    
+    additional LIMITs in drilldown
+    
+    State choropleth requires state code normalization
+    
+    ensure 2-letter state abbreviations used for mapping
+    
+    Notes on Prompts Discipline
+    
+    All prompts used in Cursor must be logged in prompts.md with:
+    
+    timestamp
+    
+    goal
+    
+    prompt text
+    
+    outcome
+    
+    next
+  outcome: Plan accepted for implementation
+  next: Implement plan tasks
+
+- timestamp: 2026-01-18 00:05
+  goal: Implement the approved plan
+  prompt: |
+    Implement the plan as specified, it is attached for your reference. Do NOT edit the plan file itself.
+    
+    To-do's from the plan have already been created. Do not create them again. Mark them as in_progress as you work, starting with the first one. Don't stop until you have completed all the to-dos.
+  outcome: Work in progress
+  next: Continue tasks
+
+- timestamp: 2026-01-18 00:20
+  goal: Run discovery SQL
+  prompt: |
+    Run the discovery.
+  outcome: Discovery executed with column/key updates
+  next: Update silver/gold queries based on discovery
+
+- timestamp: 2026-01-18 00:25
+  goal: Handle OCSP issues
+  prompt: |
+    It may be necessary to switch to insecure mode to avoid OCSP errors.
+  outcome: Added optional OCSP flags support
+  next: Retry discovery with flags
+
+- timestamp: 2026-01-18 00:30
+  goal: Retry discovery
+  prompt: |
+    Retry discovery.
+  outcome: Discovery completed with OCSP flags
+  next: Update data model fields
+
+- timestamp: 2026-01-18 00:40
+  goal: Run setup + pipeline SQL
+  prompt: |
+    Confirmed it is safe to drop and recreate analytics. Run the setup and pipeline SQL.
+  outcome: Setup ran; centroids loaded; silver/gold DTs created
+  next: Validate app with sample queries
+
+- timestamp: 2026-01-18 00:45
+  goal: Run discovery with OCSP flags
+  prompt: |
+    Retry discovery.
+  outcome: Discovery completed using OCSP flags
+  next: Update silver/gold fields
+

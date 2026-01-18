@@ -4,3 +4,4 @@ config/secrets.env
 .cursor/debug.log
 .DS_Store
 .cursor/
+data/county_centroids.csv
