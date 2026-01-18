@@ -1,0 +1,6 @@
+.env
+config/secrets.env
+
+.cursor/debug.log
+.DS_Store
+.cursor/
