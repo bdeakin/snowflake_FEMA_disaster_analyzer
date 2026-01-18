@@ -604,3 +604,24 @@ Format:
   outcome: Prompt updated for overview + bullets; modal dialog used
   next: Validate with quota
 
+
+- timestamp: 2026-01-18 15:20
+  goal: Cortex PAT auth failure
+  prompt: |
+    This error is occurring when running on Streamlit in Snowflake: Cortex Analyst REST unauthorized (PAT mode)... oauth-protected-resource...
+  outcome: Confirmed endpoint is OAuth-protected; advised PAT not accepted
+  next: Decide on OAuth vs SiS-only
+
+- timestamp: 2026-01-18 15:30
+  goal: New account env update
+  prompt: |
+    I've updated the snowflake_account.
+  outcome: Updated secrets.env and resumed rebuild
+  next: Re-run Silver/Gold pipeline
+
+- timestamp: 2026-01-18 15:35
+  goal: Enable public data
+  prompt: |
+    I've added public data to the account. It should be accessible now.
+  outcome: Rebuilt Silver/Gold and validated row counts
+  next: Verify app renders
