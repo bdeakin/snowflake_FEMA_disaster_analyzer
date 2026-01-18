@@ -527,3 +527,80 @@ Format:
   outcome: NLQ pane added with Analyst-driven SQL and map rendering
   next: Validate Analyst SQL generation
 
+- timestamp: 2026-01-18 11:05
+  goal: Rollback NLQ pane
+  prompt: |
+    For now, let's roll back the NLQ functionality. Eliminate the NLQ pane. Preserve the existing functionality on the main viewport. Eliminate dead and redundant code paths as a result of the roll back.
+  outcome: Removed NLQ tab, deleted NLQ modules and semantic model, cleaned imports
+  next: Verify Explore view only
+
+- timestamp: 2026-01-18 11:20
+  goal: Add bump chart pane
+  prompt: |
+    Create an additional pane within the application which has a bump chart showing the change in most frequently occurring disaster types by year. When clicking on an individual entry in the bump chart, produce a drilldown table view of the disasters within that entry. Summarize the rows in the drilldown to the incident type with detail about the count occurring in each state.
+  outcome: Added bump chart tab with drilldown table
+  next: Fix chart/query issues
+
+- timestamp: 2026-01-18 11:35
+  goal: Adjust bump chart UX
+  prompt: |
+    Make the bump chart significantly taller so that the visualization is easier to read, and limit the chart to the Top-5 most common disasters by year instead of Top-10.
+  outcome: Chart height increased and top-5 enforced
+  next: Enhance drilldown columns
+
+- timestamp: 2026-01-18 11:40
+  goal: Add declared incident names
+  prompt: |
+    On the bump chart in the drilldown area, add a column to the table with a distinct list of the declared disasters in each row.
+  outcome: Added distinct declared incident list column
+  next: Ensure correct naming
+
+- timestamp: 2026-01-18 11:45
+  goal: Use incident names
+  prompt: |
+    The table in the drilldown is showing the names of the disaster types. Instead, it should show the name of the declared incident - for instance "Hurricane Helene" or "Hurricane Irma".
+  outcome: Drilldown list uses declaration_name for specific incidents
+  next: Resolve LISTAGG order error
+
+- timestamp: 2026-01-18 12:05
+  goal: Decade bump chart + state derivation
+  prompt: |
+    Change the bump chart to be by decade instead of by year. Also, there are a number of disasters which appear to have no assigned state... derive the state from other information available and update the dynamic tables appropriately.
+  outcome: Bump chart uses decade buckets; silver DT derives state via STATE_GEO_ID
+  next: Rebuild silver DT
+
+- timestamp: 2026-01-18 12:20
+  goal: Bump chart styling
+  prompt: |
+    Rather than the bump chart being displayed as lines, re-factor to look more like this... circles with consistent colors.
+  outcome: Chart uses labeled circles with stable colors
+  next: Improve contrast/ordering
+
+- timestamp: 2026-01-18 12:25
+  goal: Bump chart readability
+  prompt: |
+    In the bump chart, the text inside the ball needs to be higher contrast... add bars that connect the disaster types... decades ordered logically.
+  outcome: Added connecting lines, white labels, chronological decade axis
+  next: Refine drilldown columns
+
+- timestamp: 2026-01-18 12:30
+  goal: Drilldown specific disasters column
+  prompt: |
+    In the drilldown section, create a separate column with the names of specific disasters.
+  outcome: Added specific_disasters column
+  next: Ship release
+
+- timestamp: 2026-01-18 12:45
+  goal: Add LLM summary
+  prompt: |
+    On the bump chart, when the user clicks on an entry, query an external LLM to summarize the causes... and embed as modal.
+  outcome: Added OpenAI summary modal with caching
+  next: Handle API key/quota
+
+- timestamp: 2026-01-18 12:55
+  goal: LLM summary format update
+  prompt: |
+    Update the LLM summarization to provide a broad thematic overview... summarize states in bullets... embed in a modal pop-up.
+  outcome: Prompt updated for overview + bullets; modal dialog used
+  next: Validate with quota
+
