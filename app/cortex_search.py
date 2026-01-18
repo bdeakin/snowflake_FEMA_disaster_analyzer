@@ -5,7 +5,27 @@ import os
 from typing import Any, Dict, List, Tuple
 
 import pandas as pd
+import requests
 import snowflake.connector
+from dotenv import load_dotenv
+
+# #region agent log
+_LOG_PATH = "/Users/bdeakin/Documents/Vibe Coding/snowflake_FEMA_disaster_analyzer/.cursor/debug.log"
+
+
+def _log_debug(hypothesis_id: str, location: str, message: str, data: Dict[str, Any]) -> None:
+    payload = {
+        "sessionId": "debug-session",
+        "runId": "pre-fix",
+        "hypothesisId": hypothesis_id,
+        "location": location,
+        "message": message,
+        "data": data,
+        "timestamp": int(__import__("time").time() * 1000),
+    }
+    with open(_LOG_PATH, "a", encoding="utf-8") as f:
+        f.write(json.dumps(payload) + "\n")
+# #endregion
 
 try:
     import _snowflake  # type: ignore
@@ -85,7 +105,7 @@ def call_analyst(messages: List[Dict[str, str]]) -> Tuple[List[str], List[str]]:
         )
         normalized = _normalize_response(response)
         return _extract_blocks(normalized)
-    response = _call_analyst_sql(body)
+    response = _call_analyst_rest_local(body)
     normalized = _normalize_response(response)
     return _extract_blocks(normalized)
 
@@ -131,10 +151,11 @@ def run_sql(sql: str):
 
 
 def snowflake_available() -> bool:
-    return _SNOWFLAKE_AVAILABLE or _has_local_creds()
+    return _SNOWFLAKE_AVAILABLE or (_has_local_creds() and _has_local_token())
 
 
 def _has_local_creds() -> bool:
+    load_dotenv("config/secrets.env")
     required = [
         "SNOWFLAKE_ACCOUNT",
         "SNOWFLAKE_USER",
@@ -143,6 +164,11 @@ def _has_local_creds() -> bool:
         "SNOWFLAKE_WAREHOUSE",
     ]
     return all(os.getenv(k) for k in required)
+
+
+def _has_local_token() -> bool:
+    load_dotenv("config/secrets.env")
+    return bool(os.getenv("SNOWFLAKE_TOKEN")) and bool(os.getenv("SNOWFLAKE_ACCOUNT"))
 
 
 def _get_local_connection():
@@ -159,54 +185,80 @@ def _get_local_connection():
     )
 
 
-def _call_analyst_sql(body: Dict[str, Any]) -> Any:
-    conn = _get_local_connection()
-    try:
-        cur = conn.cursor()
-        cur.execute("SHOW FUNCTIONS LIKE 'SYSTEM$CORTEX_ANALYST_QUERY' IN ACCOUNT")
-        rows = cur.fetchall()
-        if len(rows) == 0:
-            raise RuntimeError("SYSTEM$CORTEX_ANALYST_QUERY is not available in this account.")
+def _call_analyst_rest_local(body: Dict[str, Any]) -> Any:
+    load_dotenv("config/secrets.env")
+    token = os.getenv("SNOWFLAKE_TOKEN")
+    account = os.getenv("SNOWFLAKE_ACCOUNT")
+    if not token:
+        raise RuntimeError("SNOWFLAKE_TOKEN is required for local Cortex Search.")
+    if not account:
+        raise RuntimeError("SNOWFLAKE_ACCOUNT is required for local Cortex Search.")
 
-        def _exec_payload(payload_dict: Dict[str, Any], attempt_id: str) -> Any:
-            payload = json.dumps(payload_dict)
-            escaped = payload.replace("'", "''")
-            sql = f"SELECT SYSTEM$CORTEX_ANALYST_QUERY('{escaped}') AS response"
-            cur.execute(sql)
-            return cur.fetchone()[0]
-
-        messages = body.get("messages", [])
-        # Attempt 1: semantic_view
-        try:
-            return _exec_payload(
-                {"messages": messages, "semantic_view": SEMANTIC_VIEW, "stream": False},
-                "H2",
-            )
-        except Exception as exc:
-            last_error = exc
-
-        # Attempt 2: semantic_model as view name
-        try:
-            return _exec_payload(
-                {"messages": messages, "semantic_model": SEMANTIC_VIEW, "stream": False},
-                "H5",
-            )
-        except Exception as exc:
-            last_error = exc
-
-        # Attempt 3: semantic_model as YAML from semantic view
-        try:
-            cur.execute(
-                "SELECT SYSTEM$READ_YAML_FROM_SEMANTIC_VIEW(%(sv)s)",
-                {"sv": SEMANTIC_VIEW},
-            )
-            yaml_text = cur.fetchone()[0]
-            return _exec_payload(
-                {"messages": messages, "semantic_model": yaml_text, "stream": False},
-                "H6",
-            )
-        except Exception as exc:
-            last_error = exc
-            raise last_error
-    finally:
-        conn.close()
+    account_host = account.lower()
+    base_url = f"https://{account_host}.snowflakecomputing.com"
+    url = f"{base_url}/api/v2/cortex/analyst/message"
+    token_type = os.getenv("SNOWFLAKE_TOKEN_TYPE", "PAT")
+    # #region agent log
+    _log_debug(
+        "H1",
+        "cortex_search.py:_call_analyst_rest_local",
+        "Preparing REST call",
+        {
+            "has_token": bool(token),
+            "account": account,
+            "account_host": account_host,
+            "token_type": token_type,
+            "token_len": len(token) if token else 0,
+            "has_role": bool(os.getenv("SNOWFLAKE_ROLE")),
+            "has_wh": bool(os.getenv("SNOWFLAKE_WAREHOUSE")),
+            "url": url,
+        },
+    )
+    # #endregion
+    headers = {
+        "Authorization": f"Bearer {token}",
+        "Content-Type": "application/json",
+        "Accept": "application/json",
+        "X-Snowflake-Authorization-Token-Type": token_type,
+    }
+    role = os.getenv("SNOWFLAKE_ROLE")
+    warehouse = os.getenv("SNOWFLAKE_WAREHOUSE")
+    if role:
+        headers["X-Snowflake-Role"] = role
+    if warehouse:
+        headers["X-Snowflake-Warehouse"] = warehouse
+    resp = requests.post(url, headers=headers, json=body, timeout=30)
+    # #region agent log
+    _log_debug(
+        "H2",
+        "cortex_search.py:_call_analyst_rest_local",
+        "REST response status",
+        {
+            "status_code": resp.status_code,
+            "reason": resp.reason,
+            "text_snippet": resp.text[:200],
+        },
+    )
+    # #endregion
+    # #region agent log
+    _log_debug(
+        "H3",
+        "cortex_search.py:_call_analyst_rest_local",
+        "REST response headers (subset)",
+        {
+            "www_authenticate": resp.headers.get("www-authenticate"),
+            "request_id": resp.headers.get("x-snowflake-request-id"),
+            "content_type": resp.headers.get("content-type"),
+        },
+    )
+    # #endregion
+    if resp.status_code == 401:
+        auth_hint = resp.headers.get("www-authenticate")
+        request_id = resp.headers.get("x-snowflake-request-id")
+        raise RuntimeError(
+            "Cortex Analyst REST unauthorized (PAT mode). Check the PAT value, "
+            "its expiration, and role grants. "
+            f"request_id={request_id} auth_hint={auth_hint}"
+        )
+    resp.raise_for_status()
+    return resp.json()

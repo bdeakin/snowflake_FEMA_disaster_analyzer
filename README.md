@@ -18,7 +18,7 @@ Only run the pipeline setup in environments where this is safe.
 - Snowflake account with access to `SNOWFLAKE_PUBLIC_DATA_PAID.PUBLIC_DATA`
 
 ## Environment
-Copy `.env.example` to `.env` and fill in credentials.
+Copy `config/env.example` to `config/secrets.env` and fill in credentials.
 
 Required variables:
 - `SNOWFLAKE_ACCOUNT`
@@ -34,6 +34,8 @@ Optional (use for OCSP/certificate issues):
 Optional (for bump chart LLM summaries):
 - `OPENAI_API_KEY`
 - `OPENAI_MODEL` (default: `gpt-4o-mini`)
+Optional (local Cortex Analyst REST, PAT only):
+- `SNOWFLAKE_TOKEN` (PAT token)
 Note: OCSP errors were resolved by upgrading `snowflake-connector-python` to the version pinned in `requirements.txt`.
 
 ## Setup Runbook

@@ -40,8 +40,12 @@ def _flag_enabled(name: str) -> bool:
 
 def get_connection():
     if _SNOWPARK_AVAILABLE:
-        # Streamlit in Snowflake uses the active session; no env vars needed.
-        return get_active_session()._conn._conn  # type: ignore[attr-defined]
+        try:
+            # Streamlit in Snowflake uses the active session; no env vars needed.
+            return get_active_session()._conn._conn  # type: ignore[attr-defined]
+        except Exception:
+            # Fall through to env-based connection for local runs.
+            pass
     load_dotenv()
     ocsp_fail_open = _flag_enabled("SNOWFLAKE_OCSP_FAIL_OPEN")
     disable_ocsp_checks = _flag_enabled("SNOWFLAKE_DISABLE_OCSP_CHECKS")
