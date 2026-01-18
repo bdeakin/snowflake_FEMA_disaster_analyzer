@@ -255,7 +255,11 @@ with cortex_tab:
     st.caption("Ask questions about the data using Snowflake Cortex Analyst.")
 
     if not snowflake_available():
-        st.info("Cortex Search requires Snowflake credentials or Streamlit in Snowflake.")
+        st.info(
+            "Cortex Search requires Snowflake credentials or Streamlit in Snowflake. "
+            "If running on Streamlit Cloud, set SNOWFLAKE_TOKEN and SNOWFLAKE_ACCOUNT "
+            "in secrets."
+        )
         st.stop()
 
     if "cortex_messages" not in st.session_state:

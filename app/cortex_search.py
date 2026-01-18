@@ -9,6 +9,12 @@ import requests
 import snowflake.connector
 from dotenv import load_dotenv
 
+try:
+    import streamlit as st
+    _STREAMLIT_AVAILABLE = True
+except Exception:
+    st = None
+    _STREAMLIT_AVAILABLE = False
 # #region agent log
 _LOG_PATH = "/Users/bdeakin/Documents/Vibe Coding/snowflake_FEMA_disaster_analyzer/.cursor/debug.log"
 
@@ -163,12 +169,28 @@ def _has_local_creds() -> bool:
         "SNOWFLAKE_ROLE",
         "SNOWFLAKE_WAREHOUSE",
     ]
-    return all(os.getenv(k) for k in required)
+    if all(os.getenv(k) for k in required):
+        return True
+    if _STREAMLIT_AVAILABLE:
+        try:
+            return all(st.secrets.get(k) for k in required)
+        except Exception:
+            return False
+    return False
 
 
 def _has_local_token() -> bool:
     load_dotenv("config/secrets.env")
-    return bool(os.getenv("SNOWFLAKE_TOKEN")) and bool(os.getenv("SNOWFLAKE_ACCOUNT"))
+    if os.getenv("SNOWFLAKE_TOKEN") and os.getenv("SNOWFLAKE_ACCOUNT"):
+        return True
+    if _STREAMLIT_AVAILABLE:
+        try:
+            return bool(st.secrets.get("SNOWFLAKE_TOKEN")) and bool(
+                st.secrets.get("SNOWFLAKE_ACCOUNT")
+            )
+        except Exception:
+            return False
+    return False
 
 
 def _get_local_connection():
@@ -189,6 +211,9 @@ def _call_analyst_rest_local(body: Dict[str, Any]) -> Any:
     load_dotenv("config/secrets.env")
     token = os.getenv("SNOWFLAKE_TOKEN")
     account = os.getenv("SNOWFLAKE_ACCOUNT")
+    if _STREAMLIT_AVAILABLE:
+        token = token or st.secrets.get("SNOWFLAKE_TOKEN")
+        account = account or st.secrets.get("SNOWFLAKE_ACCOUNT")
     if not token:
         raise RuntimeError("SNOWFLAKE_TOKEN is required for local Cortex Search.")
     if not account:
@@ -223,6 +248,9 @@ def _call_analyst_rest_local(body: Dict[str, Any]) -> Any:
     }
     role = os.getenv("SNOWFLAKE_ROLE")
     warehouse = os.getenv("SNOWFLAKE_WAREHOUSE")
+    if _STREAMLIT_AVAILABLE:
+        role = role or st.secrets.get("SNOWFLAKE_ROLE")
+        warehouse = warehouse or st.secrets.get("SNOWFLAKE_WAREHOUSE")
     if role:
         headers["X-Snowflake-Role"] = role
     if warehouse:
