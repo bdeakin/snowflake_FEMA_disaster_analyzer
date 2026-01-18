@@ -57,3 +57,5 @@ def summarize_bump_entry(
     resp.raise_for_status()
     data = resp.json()
     return data["choices"][0]["message"]["content"].strip()
+
+

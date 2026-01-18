@@ -194,6 +194,8 @@ def get_disaster_type_bump_ranks(limit_per_decade: int = 10) -> QueryResult:
     return fetch_df(sql, {"limit_per_decade": limit_per_decade})
 
 
+
+
 def get_bump_drilldown_state_summary(period_decade: str, disaster_type: str) -> QueryResult:
     sql = """
         SELECT

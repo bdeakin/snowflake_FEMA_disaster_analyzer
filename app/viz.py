@@ -139,8 +139,12 @@ def build_bump_chart(df: pd.DataFrame):
         )
 
     # Attach counts to hover customdata
-    for i, trace in enumerate(fig.data):
+    for trace in fig.data:
+        if not getattr(trace, 'customdata', None):
+            continue
         disaster_type = trace.name
+        if not disaster_type:
+            continue
         group = df[df["disaster_type"] == disaster_type].sort_values("period_decade")
         customdata = [
             [d.strftime("%Y-%m-%d"), disaster_type, int(c)]
