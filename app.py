@@ -6,6 +6,7 @@ from typing import Dict, List, Tuple
 import pandas as pd
 import streamlit as st
 import plotly.express as px
+import plotly.graph_objects as go
 from streamlit_plotly_events import plotly_events
 from dotenv import load_dotenv
 
@@ -72,6 +73,217 @@ def _get_database_schema() -> Tuple[str, str]:
 
 
 TABLE_FQN = _table_fqn()
+DETAIL_VIEW_FQN = _get_env("FEMA_DETAIL_VIEW_FQN", "FEMA_ANALYTICS.PUBLIC.FEMA_DISASTER_DETAIL_VIEW")
+
+METRO_POINTS = [
+    ("New York-Newark-Jersey City, NY-NJ-PA", 40.7128, -74.0060),
+    ("Boston-Cambridge-Newton, MA-NH", 42.3601, -71.0589),
+    ("Philadelphia-Camden-Wilmington, PA-NJ-DE-MD", 39.9526, -75.1652),
+    ("Washington-Arlington-Alexandria, DC-VA-MD-WV", 38.9072, -77.0369),
+    ("Baltimore-Columbia-Towson, MD", 39.2904, -76.6122),
+    ("Pittsburgh, PA", 40.4406, -79.9959),
+    ("Providence-Warwick, RI-MA", 41.8240, -71.4128),
+    ("Buffalo-Cheektowaga-Niagara Falls, NY", 42.8864, -78.8784),
+    ("Rochester, NY", 43.1566, -77.6088),
+    ("Hartford-East Hartford-Middletown, CT", 41.7658, -72.6734),
+    ("New Haven-Milford, CT", 41.3083, -72.9279),
+    ("Albany-Schenectady-Troy, NY", 42.6526, -73.7562),
+    ("Syracuse, NY", 43.0481, -76.1474),
+    ("Atlanta-Sandy Springs-Roswell, GA", 33.7490, -84.3880),
+    ("Miami-Fort Lauderdale-Pompano Beach, FL", 25.7617, -80.1918),
+    ("Orlando-Kissimmee-Sanford, FL", 28.5383, -81.3792),
+    ("Tampa-St. Petersburg-Clearwater, FL", 27.9506, -82.4572),
+    ("Jacksonville, FL", 30.3322, -81.6557),
+    ("Charlotte-Concord-Gastonia, NC-SC", 35.2271, -80.8431),
+    ("Raleigh-Cary, NC", 35.7796, -78.6382),
+    ("Nashville-Davidson-Murfreesboro-Franklin, TN", 36.1627, -86.7816),
+    ("Richmond, VA", 37.5407, -77.4360),
+    ("Virginia Beach-Norfolk-Newport News, VA-NC", 36.8508, -76.2859),
+    ("Birmingham-Hoover, AL", 33.5186, -86.8104),
+    ("Louisville/Jefferson County, KY-IN", 38.2527, -85.7585),
+    ("Memphis, TN-MS-AR", 35.1495, -90.0490),
+    ("New Orleans-Metairie, LA", 29.9511, -90.0715),
+    ("Charleston-North Charleston, SC", 32.7765, -79.9311),
+    ("Greenville-Anderson, SC", 34.8526, -82.3940),
+    ("Columbia, SC", 34.0007, -81.0348),
+    ("Chicago-Naperville-Elgin, IL-IN-WI", 41.8781, -87.6298),
+    ("Detroit-Warren-Dearborn, MI", 42.3314, -83.0458),
+    ("Minneapolis-St. Paul-Bloomington, MN-WI", 44.9778, -93.2650),
+    ("St. Louis, MO-IL", 38.6270, -90.1994),
+    ("Cleveland-Elyria, OH", 41.4993, -81.6944),
+    ("Cincinnati, OH-KY-IN", 39.1031, -84.5120),
+    ("Columbus, OH", 39.9612, -82.9988),
+    ("Indianapolis-Carmel-Anderson, IN", 39.7684, -86.1581),
+    ("Kansas City, MO-KS", 39.0997, -94.5786),
+    ("Milwaukee-Waukesha-West Allis, WI", 43.0389, -87.9065),
+    ("Madison, WI", 43.0731, -89.4012),
+    ("Grand Rapids-Wyoming, MI", 42.9634, -85.6681),
+    ("Omaha-Council Bluffs, NE-IA", 41.2565, -95.9345),
+    ("Dayton, OH", 39.7589, -84.1916),
+    ("Toledo, OH", 41.6528, -83.5379),
+    ("Des Moines-West Des Moines, IA", 41.5868, -93.6250),
+    ("Phoenix-Mesa-Chandler, AZ", 33.4484, -112.0740),
+    ("Las Vegas-Henderson-Paradise, NV", 36.1699, -115.1398),
+    ("Denver-Aurora-Lakewood, CO", 39.7392, -104.9903),
+    ("Salt Lake City, UT", 40.7608, -111.8910),
+    ("Tucson, AZ", 32.2226, -110.9747),
+    ("Albuquerque, NM", 35.0844, -106.6504),
+    ("Colorado Springs, CO", 38.8339, -104.8214),
+    ("Reno, NV", 39.5296, -119.8138),
+    ("Boise City, ID", 43.6150, -116.2023),
+    ("Dallas-Fort Worth-Arlington, TX", 32.7767, -96.7970),
+    ("Houston-The Woodlands-Sugar Land, TX", 29.7604, -95.3698),
+    ("San Antonio-New Braunfels, TX", 29.4241, -98.4936),
+    ("Austin-Round Rock-Georgetown, TX", 30.2672, -97.7431),
+    ("Fort Worth-Arlington, TX", 32.7555, -97.3308),
+    ("El Paso, TX", 31.7619, -106.4850),
+    ("Los Angeles-Long Beach-Anaheim, CA", 34.0522, -118.2437),
+    ("San Francisco-Oakland-Berkeley, CA", 37.7749, -122.4194),
+    ("San Jose-Sunnyvale-Santa Clara, CA", 37.3382, -121.8863),
+    ("San Diego-Chula Vista-Carlsbad, CA", 32.7157, -117.1611),
+    ("Seattle-Tacoma-Bellevue, WA", 47.6062, -122.3321),
+    ("Portland-Vancouver-Hillsboro, OR-WA", 45.5152, -122.6784),
+    ("Sacramento-Roseville-Folsom, CA", 38.5816, -121.4944),
+    ("Riverside-San Bernardino-Ontario, CA", 33.9533, -117.3962),
+    ("Fresno, CA", 36.7378, -119.7871),
+    ("Bakersfield, CA", 35.3733, -119.0187),
+    ("Stockton-Lodi, CA", 37.9577, -121.2908),
+    ("Oxnard-Thousand Oaks-Ventura, CA", 34.1975, -119.1771),
+    ("Santa Rosa-Petaluma, CA", 38.4404, -122.7141),
+    ("Anchorage, AK", 61.2181, -149.9003),
+    ("Urban Honolulu, HI", 21.3069, -157.8583),
+]
+
+MID_METRO_POINTS = [
+    ("Allentown-Bethlehem-Easton, PA-NJ", 40.6023, -75.4714),
+    ("Harrisburg-Carlisle, PA", 40.2732, -76.8867),
+    ("Lancaster, PA", 40.0379, -76.3055),
+    ("Scranton-Wilkes-Barre, PA", 41.4089, -75.6624),
+    ("York-Hanover, PA", 39.9626, -76.7277),
+    ("Springfield, MA", 42.1015, -72.5898),
+    ("Worcester, MA-CT", 42.2626, -71.8023),
+    ("Portland-South Portland, ME", 43.6591, -70.2568),
+    ("Burlington-South Burlington, VT", 44.4759, -73.2121),
+    ("Manchester-Nashua, NH", 42.9956, -71.4548),
+    ("Bridgeport-Stamford-Norwalk, CT", 41.1792, -73.1894),
+    ("Trenton-Princeton, NJ", 40.2204, -74.7643),
+    ("Poughkeepsie-Newburgh-Middletown, NY", 41.7004, -73.9210),
+    ("Utica-Rome, NY", 43.1009, -75.2327),
+    ("Binghamton, NY", 42.0987, -75.9180),
+    ("Palm Bay-Melbourne-Titusville, FL", 28.0836, -80.6081),
+    ("Cape Coral-Fort Myers, FL", 26.6406, -81.8723),
+    ("Sarasota-Bradenton-Venice, FL", 27.3364, -82.5307),
+    ("Port St. Lucie, FL", 27.2730, -80.3582),
+    ("Pensacola-Ferry Pass-Brent, FL", 30.4213, -87.2169),
+    ("Tallahassee, FL", 30.4383, -84.2807),
+    ("Gainesville, FL", 29.6516, -82.3248),
+    ("Lakeland-Winter Haven, FL", 28.0395, -81.9498),
+    ("Deltona-Daytona Beach-Ormond Beach, FL", 29.2108, -81.0228),
+    ("Augusta-Richmond County, GA-SC", 33.4735, -82.0105),
+    ("Savannah, GA", 32.0809, -81.0912),
+    ("Columbus, GA-AL", 32.4609, -84.9877),
+    ("Macon-Bibb County, GA", 32.8407, -83.6324),
+    ("Chattanooga, TN-GA", 35.0456, -85.3097),
+    ("Knoxville, TN", 35.9606, -83.9207),
+    ("Johnson City, TN", 36.3134, -82.3535),
+    ("Asheville, NC", 35.5951, -82.5515),
+    ("Wilmington, NC", 34.2257, -77.9447),
+    ("Fayetteville, NC", 35.0527, -78.8784),
+    ("Winston-Salem, NC", 36.0999, -80.2442),
+    ("Greensboro-High Point, NC", 36.0726, -79.7920),
+    ("Durham-Chapel Hill, NC", 35.9940, -78.8986),
+    ("Lexington-Fayette, KY", 38.0406, -84.5037),
+    ("Huntsville, AL", 34.7304, -86.5861),
+    ("Mobile, AL", 30.6954, -88.0399),
+    ("Baton Rouge, LA", 30.4515, -91.1871),
+    ("Lafayette, LA", 30.2241, -92.0198),
+    ("Shreveport-Bossier City, LA", 32.5252, -93.7502),
+    ("Little Rock-North Little Rock-Conway, AR", 34.7465, -92.2896),
+    ("Jackson, MS", 32.2988, -90.1848),
+    ("Gulfport-Biloxi-Pascagoula, MS", 30.3674, -89.0928),
+    ("Akron, OH", 41.0814, -81.5190),
+    ("Youngstown-Warren-Boardman, OH-PA", 41.0998, -80.6495),
+    ("Canton-Massillon, OH", 40.7989, -81.3784),
+    ("Fort Wayne, IN", 41.0793, -85.1394),
+    ("South Bend-Mishawaka, IN-MI", 41.6764, -86.2520),
+    ("Evansville, IN-KY", 37.9716, -87.5711),
+    ("Lansing-East Lansing, MI", 42.7325, -84.5555),
+    ("Ann Arbor, MI", 42.2808, -83.7430),
+    ("Flint, MI", 43.0125, -83.6875),
+    ("Kalamazoo-Portage, MI", 42.2917, -85.5872),
+    ("Rockford, IL", 42.2711, -89.0940),
+    ("Peoria, IL", 40.6936, -89.5890),
+    ("Champaign-Urbana, IL", 40.1164, -88.2434),
+    ("Springfield, IL", 39.7817, -89.6501),
+    ("Quad Cities, IA-IL", 41.5236, -90.5776),
+    ("Cedar Rapids, IA", 41.9779, -91.6656),
+    ("Iowa City, IA", 41.6611, -91.5302),
+    ("Sioux Falls, SD", 43.5446, -96.7311),
+    ("Fargo, ND-MN", 46.8772, -96.7898),
+    ("Lincoln, NE", 40.8136, -96.7026),
+    ("Wichita, KS", 37.6872, -97.3301),
+    ("Topeka, KS", 39.0558, -95.6890),
+    ("Springfield, MO", 37.2089, -93.2923),
+    ("Columbia, MO", 38.9517, -92.3341),
+    ("Duluth, MN-WI", 46.7867, -92.1005),
+    ("Green Bay, WI", 44.5133, -88.0133),
+    ("Appleton, WI", 44.2619, -88.4154),
+    ("Corpus Christi, TX", 27.8006, -97.3964),
+    ("McAllen-Edinburg-Mission, TX", 26.2034, -98.2300),
+    ("Brownsville-Harlingen, TX", 25.9017, -97.4975),
+    ("Lubbock, TX", 33.5779, -101.8552),
+    ("Amarillo, TX", 35.221997, -101.8313),
+    ("Waco, TX", 31.5493, -97.1467),
+    ("Killeen-Temple, TX", 31.1171, -97.7278),
+    ("College Station-Bryan, TX", 30.6280, -96.3344),
+    ("Beaumont-Port Arthur, TX", 30.0802, -94.1266),
+    ("Midland, TX", 31.9973, -102.0779),
+    ("Odessa, TX", 31.8457, -102.3676),
+    ("Tyler, TX", 32.3513, -95.3011),
+    ("Abilene, TX", 32.4487, -99.7331),
+    ("Wichita Falls, TX", 33.9137, -98.4934),
+    ("Santa Fe, NM", 35.6870, -105.9378),
+    ("Las Cruces, NM", 32.3199, -106.7637),
+    ("Flagstaff, AZ", 35.1983, -111.6513),
+    ("Prescott, AZ", 34.5400, -112.4685),
+    ("Yuma, AZ", 32.6927, -114.6277),
+    ("St. George, UT", 37.0965, -113.5684),
+    ("Provo-Orem, UT", 40.2969, -111.6946),
+    ("Ogden-Clearfield, UT", 41.2230, -111.9738),
+    ("Grand Junction, CO", 39.0639, -108.5506),
+    ("Fort Collins, CO", 40.5853, -105.0844),
+    ("Boulder, CO", 40.01499, -105.2705),
+    ("Pueblo, CO", 38.2544, -104.6091),
+    ("Billings, MT", 45.7833, -108.5007),
+    ("Missoula, MT", 46.8721, -113.9940),
+    ("Bozeman, MT", 45.6770, -111.0429),
+    ("Cheyenne, WY", 41.1400, -104.8202),
+    ("Spokane-Spokane Valley, WA", 47.6588, -117.4260),
+    ("Tri-Cities, WA", 46.2306, -119.0911),
+    ("Yakima, WA", 46.6021, -120.5059),
+    ("Eugene-Springfield, OR", 44.0521, -123.0868),
+    ("Salem, OR", 44.9429, -123.0351),
+    ("Bend, OR", 44.0582, -121.3153),
+    ("Medford, OR", 42.3265, -122.8756),
+    ("Santa Barbara, CA", 34.4208, -119.6982),
+    ("Monterey, CA", 36.6002, -121.8947),
+    ("San Luis Obispo-Paso Robles, CA", 35.2828, -120.6596),
+    ("Chico, CA", 39.7285, -121.8375),
+    ("Redding, CA", 40.5865, -122.3917),
+    ("Visalia, CA", 36.3302, -119.2921),
+    ("Modesto, CA", 37.6391, -120.9969),
+    ("Carson City, NV", 39.1638, -119.7674),
+    ("Idaho Falls, ID", 43.4917, -112.0333),
+    ("Coeur d'Alene, ID", 47.6777, -116.7805),
+    ("Pocatello, ID", 42.8713, -112.4455),
+    ("Fairbanks, AK", 64.8378, -147.7164),
+    ("Juneau, AK", 58.3019, -134.4197),
+    ("Kenai-Soldotna, AK", 60.5544, -151.2583),
+    ("Ketchikan, AK", 55.3422, -131.6461),
+    ("Kahului-Wailuku-Lahaina, HI", 20.8893, -156.4740),
+    ("Hilo, HI", 19.7074, -155.0897),
+    ("Kailua-Kona, HI", 19.6399, -155.9969),
+]
 
 
 def _build_in_clause(values: List[str], prefix: str) -> Tuple[str, Dict[str, str]]:
@@ -227,15 +439,67 @@ def build_filtered_query(
     return sql, params
 
 
+def build_cluster_detail_query(
+    table_fqn: str,
+    states: List[str],
+    incidents: List[str],
+    year_range: Tuple[int, int],
+    limit_rows: int,
+    bounds: Tuple[float, float, float, float] = None,
+) -> Tuple[str, Dict[str, str]]:
+    where_clauses = []
+    params: Dict[str, str] = {}
+    state_column = "STATE_NAME"
+    incident_column = "INCIDENT_TYPE"
+    date_column = "DISASTER_BEGIN_DATE"
+
+    if states and state_column:
+        clause, clause_params = _build_in_clause(states, "state")
+        where_clauses.append(f"{state_column} IN {clause}")
+        params.update(clause_params)
+    if incidents and incident_column:
+        clause, clause_params = _build_in_clause(incidents, "incident")
+        where_clauses.append(f"{incident_column} IN {clause}")
+        params.update(clause_params)
+    if date_column and year_range != (0, 0):
+        where_clauses.append(
+            f"YEAR(TO_DATE({date_column})) BETWEEN %(min_year)s AND %(max_year)s"
+        )
+        params["min_year"] = str(year_range[0])
+        params["max_year"] = str(year_range[1])
+    if bounds:
+        min_lat, max_lat, min_lon, max_lon = bounds
+        where_clauses.append("LATITUDE BETWEEN %(min_lat)s AND %(max_lat)s")
+        where_clauses.append("LONGITUDE BETWEEN %(min_lon)s AND %(max_lon)s")
+        params["min_lat"] = float(min_lat)
+        params["max_lat"] = float(max_lat)
+        params["min_lon"] = float(min_lon)
+        params["max_lon"] = float(max_lon)
+
+    where_sql = " AND ".join(where_clauses) if where_clauses else "1=1"
+    sql = (
+        "SELECT "
+        "STATE_NAME AS state_name, "
+        "INCIDENT_TYPE AS incident_type, "
+        "DISASTER_DECLARATION_NAME AS disaster_declaration_name, "
+        "DISASTER_BEGIN_DATE AS disaster_begin_date, "
+        "DISASTER_END_DATE AS disaster_end_date, "
+        "LATITUDE AS latitude, "
+        "LONGITUDE AS longitude "
+        f"FROM {table_fqn} WHERE {where_sql} "
+        "ORDER BY DISASTER_BEGIN_DATE DESC "
+        f"LIMIT {int(limit_rows)}"
+    )
+    return sql, params
+
+
 def build_agg_query(
     table_fqn: str,
     states: List[str],
     incidents: List[str],
     year_range: Tuple[int, int],
     limit_rows: int,
-    grid_large_degrees: float,
-    grid_small_degrees: float,
-    metro_threshold: int,
+    grid_size: float,
     bounds: Tuple[float, float, float, float] = None,
 ) -> Tuple[str, Dict[str, str]]:
     where_clauses = []
@@ -272,36 +536,215 @@ WITH base AS (
         DISASTER_COUNT AS count
     FROM {table_fqn}
     WHERE {where_sql}
-),
-large AS (
-    SELECT
-        ROUND(lat / {grid_large_degrees}) * {grid_large_degrees} AS lat_l,
-        ROUND(lon / {grid_large_degrees}) * {grid_large_degrees} AS lon_l,
-        SUM(count) AS count_l
-    FROM base
-    GROUP BY lat_l, lon_l
-),
-small AS (
-    SELECT
-        ROUND(lat / {grid_small_degrees}) * {grid_small_degrees} AS lat_s,
-        ROUND(lon / {grid_small_degrees}) * {grid_small_degrees} AS lon_s,
-        ROUND(lat / {grid_large_degrees}) * {grid_large_degrees} AS lat_l,
-        ROUND(lon / {grid_large_degrees}) * {grid_large_degrees} AS lon_l,
-        SUM(count) AS count_s
-    FROM base
-    GROUP BY lat_s, lon_s, lat_l, lon_l
 )
-SELECT lat_l AS latitude, lon_l AS longitude, count_l AS count,
-       'large' AS grid_level, {grid_large_degrees} AS grid_size
-FROM large
-WHERE count_l >= {metro_threshold}
-UNION ALL
-SELECT s.lat_s AS latitude, s.lon_s AS longitude, s.count_s AS count,
-       'small' AS grid_level, {grid_small_degrees} AS grid_size
-FROM small s
-JOIN large l ON s.lat_l = l.lat_l AND s.lon_l = l.lon_l
-WHERE l.count_l < {metro_threshold}
+SELECT
+    ROUND(lat / {grid_size}) * {grid_size} AS latitude,
+    ROUND(lon / {grid_size}) * {grid_size} AS longitude,
+    SUM(count) AS count,
+    {grid_size} AS grid_size
+FROM base
+GROUP BY latitude, longitude
 LIMIT {int(limit_rows)}
+"""
+    return sql, params
+
+
+def build_metro_query(
+    detail_fqn: str,
+    states: List[str],
+    incidents: List[str],
+    year_range: Tuple[int, int],
+    limit_rows: int,
+    radius_miles: float,
+    metro_points: List[Tuple[str, float, float]],
+) -> Tuple[str, Dict[str, str]]:
+    where_clauses = []
+    params: Dict[str, str] = {}
+    state_column = "STATE_NAME"
+    incident_column = "INCIDENT_TYPE"
+    date_column = "DISASTER_BEGIN_DATE"
+    if states and state_column:
+        clause, clause_params = _build_in_clause(states, "state")
+        where_clauses.append(f"{state_column} IN {clause}")
+        params.update(clause_params)
+    if incidents and incident_column:
+        clause, clause_params = _build_in_clause(incidents, "incident")
+        where_clauses.append(f"{incident_column} IN {clause}")
+        params.update(clause_params)
+    if date_column and year_range != (0, 0):
+        where_clauses.append(
+            f"YEAR(TRY_TO_DATE(TO_VARCHAR({date_column}))) BETWEEN %(min_year)s AND %(max_year)s"
+        )
+        params["min_year"] = str(year_range[0])
+        params["max_year"] = str(year_range[1])
+    where_sql = " AND ".join(where_clauses) if where_clauses else "1=1"
+
+    def _escape_sql(value: str) -> str:
+        return str(value).replace("'", "''")
+
+    values_sql = ",\n".join(
+        [f"('{_escape_sql(name)}', {lat}, {lon})" for name, lat, lon in metro_points]
+    )
+    radius_deg = radius_miles / 69.0
+    sql = f"""
+WITH metros AS (
+    SELECT column1 AS metro_name, column2::FLOAT AS metro_lat, column3::FLOAT AS metro_lon
+    FROM VALUES
+    {values_sql}
+),
+detail AS (
+    SELECT
+        STATE_NAME,
+        INCIDENT_TYPE,
+        DISASTER_DECLARATION_NAME,
+        TRY_TO_DATE(TO_VARCHAR(DISASTER_BEGIN_DATE)) AS disaster_begin_date,
+        TRY_TO_DATE(TO_VARCHAR(DISASTER_END_DATE)) AS disaster_end_date,
+        LATITUDE,
+        LONGITUDE,
+        MD5(
+            COALESCE(STATE_NAME, '') || '|' ||
+            COALESCE(INCIDENT_TYPE, '') || '|' ||
+            COALESCE(TO_VARCHAR(DISASTER_BEGIN_DATE), '') || '|' ||
+            COALESCE(TO_VARCHAR(DISASTER_END_DATE), '') || '|' ||
+            COALESCE(TO_VARCHAR(LATITUDE), '') || '|' ||
+            COALESCE(TO_VARCHAR(LONGITUDE), '')
+        ) AS uid
+    FROM {detail_fqn}
+    WHERE {where_sql}
+      AND LATITUDE IS NOT NULL
+      AND LONGITUDE IS NOT NULL
+),
+joined AS (
+    SELECT
+        d.*,
+        m.metro_name,
+        m.metro_lat,
+        m.metro_lon,
+        69 * SQRT(POWER(d.LATITUDE - m.metro_lat, 2) +
+            POWER((d.LONGITUDE - m.metro_lon) * COS(RADIANS(m.metro_lat)), 2)) AS dist_miles
+    FROM detail d
+    JOIN metros m
+      ON 69 * SQRT(POWER(d.LATITUDE - m.metro_lat, 2) +
+        POWER((d.LONGITUDE - m.metro_lon) * COS(RADIANS(m.metro_lat)), 2)) <= {radius_miles}
+),
+ranked AS (
+    SELECT *, ROW_NUMBER() OVER (PARTITION BY uid ORDER BY dist_miles) AS rn
+    FROM joined
+),
+assigned AS (
+    SELECT * FROM ranked WHERE rn = 1
+),
+counts AS (
+    SELECT
+        metro_name,
+        metro_lat,
+        metro_lon,
+        YEAR(disaster_begin_date) AS disaster_year,
+        INCIDENT_TYPE,
+        COUNT(*) AS cnt
+    FROM assigned
+    GROUP BY metro_name, metro_lat, metro_lon, disaster_year, INCIDENT_TYPE
+),
+summary AS (
+    SELECT
+        metro_name,
+        metro_lat,
+        metro_lon,
+        LISTAGG(
+            TO_VARCHAR(disaster_year) || ' ' || INCIDENT_TYPE || ': ' || cnt,
+            ', '
+        ) WITHIN GROUP (ORDER BY disaster_year DESC, cnt DESC) AS type_year_summary,
+        SUM(cnt) AS count
+    FROM counts
+    GROUP BY metro_name, metro_lat, metro_lon
+)
+SELECT
+    metro_name,
+    metro_lat AS latitude,
+    metro_lon AS longitude,
+    count,
+    type_year_summary,
+    {radius_deg * 2} AS grid_size
+FROM summary
+ORDER BY count DESC
+LIMIT {int(limit_rows)}
+"""
+    return sql, params
+
+
+def build_region_query(
+    table_fqn: str,
+    states: List[str],
+    incidents: List[str],
+    year_range: Tuple[int, int],
+) -> Tuple[str, Dict[str, str]]:
+    where_clauses = []
+    params: Dict[str, str] = {}
+    state_column = "STATE_GEO_ID"
+    incident_column = "INCIDENT_TYPE"
+    date_column = "DISASTER_DECLARATION_DATE"
+    if states and state_column:
+        clause, clause_params = _build_in_clause(states, "state")
+        where_clauses.append(f"{state_column} IN {clause}")
+        params.update(clause_params)
+    if incidents and incident_column:
+        clause, clause_params = _build_in_clause(incidents, "incident")
+        where_clauses.append(f"{incident_column} IN {clause}")
+        params.update(clause_params)
+    if date_column and year_range != (0, 0):
+        where_clauses.append(
+            f"YEAR(TRY_TO_DATE(TO_VARCHAR({date_column}))) BETWEEN %(min_year)s AND %(max_year)s"
+        )
+        params["min_year"] = str(year_range[0])
+        params["max_year"] = str(year_range[1])
+    where_sql = " AND ".join(where_clauses) if where_clauses else "1=1"
+
+    sql = f"""
+WITH detail AS (
+    SELECT
+        FEMA_REGION_NAME AS region_name,
+        COALESCE(REGION_LATITUDE, COUNTY_LATITUDE) AS lat,
+        COALESCE(REGION_LONGITUDE, COUNTY_LONGITUDE) AS lon,
+        INCIDENT_TYPE,
+        YEAR(TRY_TO_DATE(TO_VARCHAR(DISASTER_DECLARATION_DATE))) AS disaster_year
+    FROM {table_fqn}
+    WHERE {where_sql}
+      AND COALESCE(REGION_LATITUDE, COUNTY_LATITUDE) IS NOT NULL
+      AND COALESCE(REGION_LONGITUDE, COUNTY_LONGITUDE) IS NOT NULL
+),
+counts AS (
+    SELECT
+        region_name,
+        AVG(lat) AS latitude,
+        AVG(lon) AS longitude,
+        disaster_year,
+        INCIDENT_TYPE,
+        COUNT(*) AS cnt
+    FROM detail
+    GROUP BY region_name, disaster_year, INCIDENT_TYPE
+),
+summary AS (
+    SELECT
+        region_name,
+        latitude,
+        longitude,
+        LISTAGG(
+            TO_VARCHAR(disaster_year) || ' ' || INCIDENT_TYPE || ': ' || cnt,
+            ', '
+        ) WITHIN GROUP (ORDER BY disaster_year DESC, cnt DESC) AS type_year_summary,
+        SUM(cnt) AS count
+    FROM counts
+    GROUP BY region_name, latitude, longitude
+)
+SELECT
+    region_name AS metro_name,
+    latitude,
+    longitude,
+    count,
+    type_year_summary,
+    8.0 AS grid_size
+FROM summary
+ORDER BY count DESC
 """
     return sql, params
 
@@ -312,9 +755,7 @@ def build_hover_query(
     incidents: List[str],
     year_range: Tuple[int, int],
     bounds: Tuple[float, float, float, float],
-    grid_large_degrees: float,
-    grid_small_degrees: float,
-    metro_threshold: int,
+    grid_size: float,
 ) -> Tuple[str, Dict[str, str]]:
     where_clauses = []
     params: Dict[str, str] = {}
@@ -351,65 +792,46 @@ WITH detail AS (
         COALESCE(COUNTY_LATITUDE, REGION_LATITUDE) AS lat,
         COALESCE(COUNTY_LONGITUDE, REGION_LONGITUDE) AS lon,
         INCIDENT_TYPE,
-        DISASTER_DECLARATION_NAME
+        YEAR(TRY_TO_DATE(TO_VARCHAR(DISASTER_DECLARATION_DATE))) AS disaster_year
     FROM {table_fqn}
     WHERE {where_sql}
 ),
-large AS (
+clustered AS (
     SELECT
-        ROUND(lat / {grid_large_degrees}) * {grid_large_degrees} AS lat_l,
-        ROUND(lon / {grid_large_degrees}) * {grid_large_degrees} AS lon_l,
-        COUNT(*) AS cnt
+        ROUND(lat / {grid_size}) * {grid_size} AS clat,
+        ROUND(lon / {grid_size}) * {grid_size} AS clon,
+        INCIDENT_TYPE,
+        disaster_year
     FROM detail
-    GROUP BY lat_l, lon_l
 ),
-assigned AS (
-    SELECT
-        CASE WHEN l.cnt >= {metro_threshold} THEN l.lat_l ELSE ROUND(d.lat / {grid_small_degrees}) * {grid_small_degrees} END AS clat,
-        CASE WHEN l.cnt >= {metro_threshold} THEN l.lon_l ELSE ROUND(d.lon / {grid_small_degrees}) * {grid_small_degrees} END AS clon,
-        d.INCIDENT_TYPE,
-        d.DISASTER_DECLARATION_NAME
-    FROM detail d
-    JOIN large l
-      ON ROUND(d.lat / {grid_large_degrees}) * {grid_large_degrees} = l.lat_l
-     AND ROUND(d.lon / {grid_large_degrees}) * {grid_large_degrees} = l.lon_l
+counts AS (
+    SELECT clat, clon, disaster_year, INCIDENT_TYPE, COUNT(*) AS cnt
+    FROM clustered
+    GROUP BY clat, clon, disaster_year, INCIDENT_TYPE
 ),
-incident_counts AS (
-    SELECT clat, clon, INCIDENT_TYPE, COUNT(*) AS cnt
-    FROM assigned
-    GROUP BY clat, clon, INCIDENT_TYPE
-),
-incident_summary AS (
+summary AS (
     SELECT
         clat,
         clon,
-        LISTAGG(INCIDENT_TYPE || ': ' || cnt, ', ') WITHIN GROUP (ORDER BY cnt DESC) AS incident_summary,
+        LISTAGG(
+            TO_VARCHAR(disaster_year) || ' ' || INCIDENT_TYPE || ': ' || cnt,
+            ', '
+        ) WITHIN GROUP (ORDER BY disaster_year DESC, cnt DESC) AS type_year_summary,
         SUM(cnt) AS total_count
-    FROM incident_counts
-    GROUP BY clat, clon
-),
-names AS (
-    SELECT
-        clat,
-        clon,
-        LISTAGG(DISTINCT DISASTER_DECLARATION_NAME, ', ') WITHIN GROUP (ORDER BY DISASTER_DECLARATION_NAME) AS name_summary,
-        COUNT(DISTINCT DISASTER_DECLARATION_NAME) AS name_count
-    FROM assigned
+    FROM counts
     GROUP BY clat, clon
 )
 SELECT
-    i.clat AS latitude,
-    i.clon AS longitude,
-    i.incident_summary,
-    CASE WHEN i.total_count < 5 THEN n.name_summary ELSE NULL END AS name_summary,
-    i.total_count AS count
-FROM incident_summary i
-LEFT JOIN names n ON i.clat = n.clat AND i.clon = n.clon
+    clat AS latitude,
+    clon AS longitude,
+    type_year_summary,
+    total_count AS count
+FROM summary
 """
     return sql, params
 
 
-def build_map_figure(df: pd.DataFrame, is_agg: bool) -> px.scatter_mapbox:
+def build_map_figure(df: pd.DataFrame, view_mode: str, map_zoom: float) -> px.scatter_mapbox:
     df = df.copy()
     if "latitude" in df.columns:
         df["latitude"] = pd.to_numeric(df["latitude"], errors="coerce")
@@ -433,45 +855,69 @@ def build_map_figure(df: pd.DataFrame, is_agg: bool) -> px.scatter_mapbox:
     if pd.isna(center_lat) or pd.isna(center_lon):
         center_lat, center_lon = 37.8, -96.0
 
-    if is_agg:
+    if view_mode == "aggregated":
+        hover_fields = {
+            "count": True,
+            "type_year_summary": True,
+        }
+        if "metro_name" in df.columns:
+            hover_fields["metro_name"] = True
         fig = px.scatter_mapbox(
             df,
             lat="latitude",
             lon="longitude",
             size="count",
             size_max=40,
-            zoom=3,
+            zoom=map_zoom,
             center={"lat": center_lat, "lon": center_lon},
             height=600,
             color="count",
             color_continuous_scale=["#9a9a9a", "#ff0000"],
-            hover_data={
-                "count": True,
-                "incident_summary": True,
-                "name_summary": True,
-            },
+            hover_data=hover_fields,
         )
     else:
-        fig = px.scatter_mapbox(
-            df,
-            lat="latitude",
-            lon="longitude",
-            zoom=3,
-            center={"lat": center_lat, "lon": center_lon},
+        if "incident_type" in df.columns:
+            incident_series = df["incident_type"]
+        else:
+            incident_series = pd.Series([""] * len(df))
+        df["icon"] = incident_series.apply(_incident_icon)
+        customdata = df[
+            [
+                "disaster_declaration_name",
+                "incident_type",
+                "disaster_begin_date",
+                "disaster_end_date",
+            ]
+        ].fillna("")
+        fig = go.Figure(
+            go.Scattermapbox(
+                lat=df["latitude"],
+                lon=df["longitude"],
+                mode="markers+text",
+                text=df["icon"],
+                textposition="middle center",
+                marker=dict(size=22, color="rgba(0,0,0,0)"),
+                customdata=customdata,
+                hovertemplate=(
+                    "<b>%{customdata[0]}</b><br>"
+                    "Type: %{customdata[1]}<br>"
+                    "Begin: %{customdata[2]}<br>"
+                    "End: %{customdata[3]}<extra></extra>"
+                ),
+            )
+        )
+        fig.update_layout(
+            mapbox_style=mapbox_style,
+            mapbox_zoom=map_zoom,
+            mapbox_center={"lat": center_lat, "lon": center_lon},
             height=600,
-            hover_data={
-                "incident_type": True,
-                "disaster_id": True,
-                "declaration_date": True,
-                "state": True,
-            },
+            margin=dict(l=0, r=0, t=0, b=0),
         )
-        fig.update_traces(
-            marker=dict(size=8, color="rgba(55,126,184,0.6)"),
-        )
+        return fig
 
     fig.update_layout(mapbox_style=mapbox_style, margin=dict(l=0, r=0, t=0, b=0))
     return fig
+
 
 
 def validate_generated_sql(sql: str, table_fqn: str, limit_rows: int) -> str:
@@ -492,17 +938,52 @@ def validate_generated_sql(sql: str, table_fqn: str, limit_rows: int) -> str:
     return cleaned
 
 
-def _extract_bounds(relayout: Dict[str, object]) -> Tuple[float, float, float, float]:
-    coords = None
-    if "mapbox._derived.coordinates" in relayout:
-        coords = relayout.get("mapbox._derived.coordinates")
-    elif isinstance(relayout.get("mapbox._derived"), dict):
-        coords = relayout.get("mapbox._derived", {}).get("coordinates")
-    if not coords:
-        return None
-    lats = [pt[1] for pt in coords]
-    lons = [pt[0] for pt in coords]
-    return (min(lats), max(lats), min(lons), max(lons))
+def _grid_size_for_bounds(
+    bounds: Tuple[float, float, float, float],
+    target_clusters: int,
+    min_size: float,
+    max_size: float,
+) -> float:
+    if not bounds:
+        return max_size
+    min_lat, max_lat, min_lon, max_lon = bounds
+    lat_span = max(max_lat - min_lat, 0.1)
+    lon_span = max(max_lon - min_lon, 0.1)
+    raw = (lat_span * lon_span / max(target_clusters, 1)) ** 0.5
+    return float(min(max(raw, min_size), max_size))
+
+
+def _incident_icon(incident_type: str) -> str:
+    if not incident_type:
+        return "❓"
+    value = str(incident_type).lower()
+    if "fire" in value:
+        return "🔥"
+    if "hurricane" in value or "cyclone" in value:
+        return "🌀"
+    if "flood" in value or "inund" in value:
+        return "🌊"
+    if "tornado" in value:
+        return "🌪️"
+    if "storm" in value:
+        return "⛈️"
+    if "drought" in value:
+        return "🌵"
+    if "earthquake" in value:
+        return "🌎"
+    if "volcano" in value:
+        return "🌋"
+    if "blizzard" in value or "snow" in value or "winter" in value:
+        return "❄️"
+    if "landslide" in value or "mud" in value:
+        return "🪨"
+    if "pandemic" in value or "virus" in value or "disease" in value:
+        return "🦠"
+    if "west nile" in value or "mosquito" in value:
+        return "🦟"
+    if "tsunami" in value:
+        return "🌊"
+    return "❓"
 
 
 def _cluster_bounds(latitude: float, longitude: float, grid_size: float) -> Tuple[float, float, float, float]:
@@ -511,30 +992,29 @@ def _cluster_bounds(latitude: float, longitude: float, grid_size: float) -> Tupl
 
 
 def _extract_click(events: object, df: pd.DataFrame) -> Dict[str, float]:
-    if not events or df.empty:
+    if not events or df.empty or not isinstance(events, dict):
         return None
-    event_list = events if isinstance(events, list) else [events]
-    for event in event_list:
-        if not isinstance(event, dict):
-            continue
-        if "pointIndex" in event:
-            idx = event.get("pointIndex")
-        elif "pointNumber" in event:
-            idx = event.get("pointNumber")
-        else:
-            continue
-        try:
-            row = df.iloc[int(idx)]
-        except Exception:
-            continue
-        grid_size = row.get("grid_size") if "grid_size" in row else None
-        return {
-            "latitude": float(row.get("latitude", event.get("lat", 0.0))),
-            "longitude": float(row.get("longitude", event.get("lon", 0.0))),
-            "grid_size": float(grid_size) if grid_size else 0.0,
-            "count": int(row.get("count", 0)),
-        }
-    return None
+    points = None
+    if "clickData" in events and isinstance(events["clickData"], dict):
+        points = events["clickData"].get("points")
+    elif "points" in events:
+        points = events.get("points")
+    if not points:
+        return None
+    idx = points[0].get("pointIndex", points[0].get("pointNumber"))
+    if idx is None:
+        return None
+    try:
+        row = df.iloc[int(idx)]
+    except Exception:
+        return None
+    grid_size = row.get("grid_size") if "grid_size" in row else None
+    return {
+        "latitude": float(row.get("latitude", 0.0)),
+        "longitude": float(row.get("longitude", 0.0)),
+        "grid_size": float(grid_size) if grid_size else 0.0,
+        "count": int(row.get("count", 0)),
+    }
 
 
 st.title("FEMA Disaster Analyzer")
@@ -571,18 +1051,68 @@ with st.sidebar:
 
     states = st.multiselect("State", options=state_options)
     incidents = st.multiselect("Incident type", options=incident_options)
+    st.subheader("Zoom")
+    zoom_options = [
+        "FEMA Region ID",
+        "Major Metropolitan Area",
+        "Metropolitan Statistical Area",
+    ]
+    zoom_map = {
+        "FEMA Region ID": 3.0,
+        "Major Metropolitan Area": 5.0,
+        "Metropolitan Statistical Area": 8.0,
+    }
+    current_zoom = float(st.session_state.get("map_zoom", 3.0))
+    current_label = next(
+        (label for label, value in zoom_map.items() if value == current_zoom),
+        "FEMA Region ID",
+    )
+    selected_label = st.selectbox("Zoom level", zoom_options, index=zoom_options.index(current_label))
+    selected_zoom = zoom_map[selected_label]
+    if selected_zoom != current_zoom:
+        st.session_state["map_zoom"] = selected_zoom
+        st.rerun()
 
 st.subheader("Map")
 use_agg = True
+view_mode = "aggregated"
 render_status = st.progress(0, text="Preparing query...")
 query_start = time.time()
 try:
     state_ids = [state_name_to_id[name] for name in states if name in state_name_to_id]
-    bounds = st.session_state.get("map_bounds", (24.0, 50.0, -125.0, -66.0))
-    grid_large_degrees = 3.6
-    grid_small_degrees = 1.45
-    metro_threshold = 50
-    filters_key = (tuple(state_ids), tuple(incidents), year_range)
+    state_names = list(states)
+    bounds = (24.0, 50.0, -125.0, -66.0)
+    map_zoom = float(st.session_state.get("map_zoom", 3.0))
+    if map_zoom <= 4:
+        view_mode = "aggregated"
+        grid_size = 8.0
+        view_label = "FEMA regions"
+    elif map_zoom < 7:
+        view_mode = "aggregated"
+        grid_size = 3.0
+        view_label = "Major metros"
+    else:
+        view_mode = "aggregated"
+        grid_size = 1.0
+        view_label = "MSA clusters"
+    st.session_state["last_view_mode"] = view_mode
+    st.session_state["last_grid_size"] = grid_size
+    st.session_state["last_bounds"] = bounds
+    # #region agent log
+    _debug_log(
+        "map zoom tier",
+        {
+            "map_zoom": map_zoom,
+            "view_mode": view_mode,
+            "grid_size": grid_size,
+            "bounds": bounds,
+        },
+        "app.py:map",
+        "ZOOM1",
+    )
+    # #endregion agent log
+    use_agg = view_mode == "aggregated"
+    filters_key = (tuple(state_ids), tuple(incidents), year_range, view_mode, round(grid_size, 2))
     if st.session_state.get("filters_key") != filters_key:
         st.session_state["filters_key"] = filters_key
         st.session_state.pop("selected_cluster", None)
@@ -596,48 +1126,66 @@ try:
             "state_ids_count": len(state_ids),
             "incident_count": len(incidents),
             "year_range": year_range,
-            "switching_disabled": True,
+            "switching_disabled": False,
+            "view_mode": view_mode,
+            "map_zoom": map_zoom,
         },
         "app.py:map",
         "OCSP1",
     )
     # #endregion agent log
-    view_label = "Aggregated"
-    st.caption("View mode: Aggregated (click a cluster for details)")
-    render_status.progress(40, text="Loading aggregated data...")
-    agg_sql, agg_params = build_agg_query(
-        "FEMA_ANALYTICS.PUBLIC.FEMA_DISASTER_AGG_VIEW",
-        state_ids,
-        incidents,
-        year_range,
-        20000,
-        grid_large_degrees,
-        grid_small_degrees,
-        metro_threshold,
-        bounds=bounds,
-    )
-    df = fetch_dataframe_plain(agg_sql, params=agg_params)
-    hover_sql, hover_params = build_hover_query(
-        TABLE_FQN,
-        state_ids,
-        incidents,
-        year_range,
-        bounds,
-        grid_large_degrees,
-        grid_small_degrees,
-        metro_threshold,
-    )
-    hover_df = fetch_dataframe_plain(hover_sql, params=hover_params)
-    df.columns = [str(col).lower() for col in df.columns]
-    if not hover_df.empty:
-        hover_df.columns = [str(col).lower() for col in hover_df.columns]
-        df = df.merge(hover_df, on=["latitude", "longitude", "count"], how="left")
+    if view_mode == "aggregated":
+        st.caption(f"View mode: {view_label} (click a cluster for details)")
+        st.caption(f"Zoom: {map_zoom:.2f}")
+        render_status.progress(40, text="Loading aggregated data...")
+        if map_zoom <= 4:
+            region_sql, region_params = build_region_query(
+                TABLE_FQN,
+                state_ids,
+                incidents,
+                year_range,
+            )
+            df = fetch_dataframe_plain(region_sql, params=region_params)
+            df.columns = [str(col).lower() for col in df.columns]
+        elif map_zoom < 7:
+            metro_sql, metro_params = build_metro_query(
+                DETAIL_VIEW_FQN,
+                state_names,
+                incidents,
+                year_range,
+                40,
+                200.0,
+                METRO_POINTS,
+            )
+            df = fetch_dataframe_plain(metro_sql, params=metro_params)
+            df.columns = [str(col).lower() for col in df.columns]
+        else:
+            msa_sql, msa_params = build_metro_query(
+                DETAIL_VIEW_FQN,
+                state_names,
+                incidents,
+                year_range,
+                300,
+                80.0,
+                METRO_POINTS + MID_METRO_POINTS,
+            )
+            df = fetch_dataframe_plain(msa_sql, params=msa_params)
+            df.columns = [str(col).lower() for col in df.columns]
+    else:
+        st.caption(f"View mode: {view_label}")
+        st.caption(f"Zoom: {map_zoom:.2f}")
+        render_status.progress(40, text="Loading incident data...")
+        detail_sql, detail_params = build_cluster_detail_query(
+            DETAIL_VIEW_FQN, state_names, incidents, year_range, 500, bounds=bounds
+        )
+        df = fetch_dataframe_plain(detail_sql, params=detail_params)
+        df.columns = [str(col).lower() for col in df.columns]
     if df.empty:
         st.info("No records returned for the selected filters.")
     else:
         render_status.progress(75, text="Rendering map...")
         df = df.reset_index(drop=True)
-        fig = build_map_figure(df, use_agg)
+        fig = build_map_figure(df, view_mode, map_zoom)
         events = None
         try:
             events = plotly_events(
@@ -648,7 +1196,6 @@ try:
                 override_height=600,
                 override_width="100%",
                 key="mapbox-plot",
-                relayout_event=True,
             )
         except TypeError:
             events = plotly_events(
@@ -660,38 +1207,38 @@ try:
                 override_width="100%",
                 key="mapbox-plot",
             )
-        if events:
-            relayout = None
-            if isinstance(events, dict) and "relayoutData" in events:
-                relayout = events["relayoutData"]
-            elif isinstance(events, list):
-                for event in events:
-                    if isinstance(event, dict) and "relayoutData" in event:
-                        relayout = event["relayoutData"]
-                        break
-            if relayout:
-                bounds_from_event = _extract_bounds(relayout)
-                if bounds_from_event:
-                    st.session_state["map_bounds"] = bounds_from_event
+        # #region agent log
+        _debug_log(
+            "plotly events received",
+            {
+                "events_type": type(events).__name__,
+                "events_keys": list(events.keys()) if isinstance(events, dict) else None,
+                "events_len": len(events) if isinstance(events, list) else None,
+            },
+            "app.py:map",
+            "ZOOM3",
+        )
+        # #endregion agent log
+        if view_mode == "aggregated" and events:
             clicked = _extract_click(events, df)
             if clicked:
                 if not clicked.get("grid_size"):
-                    clicked["grid_size"] = grid_small_degrees
+                    clicked["grid_size"] = grid_size
                 if clicked != st.session_state.get("selected_cluster"):
                     st.session_state["selected_cluster"] = clicked
                     st.session_state["cluster_detail_df"] = None
-        if st.session_state.get("selected_cluster") and st.session_state.get("cluster_detail_df") is None:
+        if view_mode == "aggregated" and st.session_state.get("selected_cluster") and st.session_state.get("cluster_detail_df") is None:
             render_status.progress(90, text="Loading cluster details...")
             selected = st.session_state["selected_cluster"]
             cluster_bounds = _cluster_bounds(
                 selected["latitude"], selected["longitude"], selected["grid_size"]
             )
-            detail_sql, detail_params = build_filtered_query(
-                TABLE_FQN,
-                state_ids,
+            detail_sql, detail_params = build_cluster_detail_query(
+                DETAIL_VIEW_FQN,
+                state_names,
                 incidents,
                 year_range,
-                500,
+                200,
                 bounds=cluster_bounds,
             )
             detail_df = fetch_dataframe_plain(detail_sql, params=detail_params)
@@ -713,6 +1260,15 @@ finally:
     elapsed = time.time() - query_start
     st.caption(f"Query time: {elapsed:.2f}s")
 
+with st.expander("Map Status", expanded=False):
+    status_payload = {
+        "zoom": float(st.session_state.get("map_zoom", 0.0)),
+        "view_mode": st.session_state.get("last_view_mode"),
+        "grid_size": st.session_state.get("last_grid_size"),
+        "bounds": st.session_state.get("last_bounds"),
+    }
+    st.json(status_payload)
+
 with st.expander("Data Preview", expanded=False):
     if use_agg:
         detail_df = st.session_state.get("cluster_detail_df")
@@ -722,39 +1278,25 @@ with st.expander("Data Preview", expanded=False):
             st.info("No detailed records found for the selected cluster.")
         else:
             preview_columns = [
-                "state_name",
-                "incident_type",
-                "disaster_declaration_name",
-                "disaster_declaration_type",
-                "fema_region_name",
-                "designated_areas",
-                "declared_programs",
-                "fema_disaster_declaration_id",
                 "disaster_begin_date",
                 "disaster_end_date",
-                "state_geo_id",
-                "county_geo_id",
-                "disaster_id",
-                "disaster_declaration_date",
+                "incident_type",
+                "disaster_declaration_name",
+                "state_name",
+                "latitude",
+                "longitude",
             ]
             available = [col for col in preview_columns if col in detail_df.columns]
             st.dataframe(detail_df[available].head(100))
     else:
         preview_columns = [
-            "state_name",
-            "incident_type",
-            "disaster_declaration_name",
-            "disaster_declaration_type",
-            "fema_region_name",
-            "designated_areas",
-            "declared_programs",
-            "fema_disaster_declaration_id",
             "disaster_begin_date",
             "disaster_end_date",
-            "state_geo_id",
-            "county_geo_id",
-            "disaster_id",
-            "disaster_declaration_date",
+            "incident_type",
+            "disaster_declaration_name",
+            "state_name",
+            "latitude",
+            "longitude",
         ]
         available = [col for col in preview_columns if col in df.columns]
         st.dataframe(df[available].head(100))
