@@ -2,6 +2,12 @@ import os
 
 from dotenv import load_dotenv
 import snowflake.connector
+try:
+    from snowflake.snowpark.context import get_active_session
+    _SNOWPARK_AVAILABLE = True
+except Exception:
+    get_active_session = None
+    _SNOWPARK_AVAILABLE = False
 
 
 REQUIRED_VARS = [
@@ -33,6 +39,9 @@ def _flag_enabled(name: str) -> bool:
 
 
 def get_connection():
+    if _SNOWPARK_AVAILABLE:
+        # Streamlit in Snowflake uses the active session; no env vars needed.
+        return get_active_session()._conn._conn  # type: ignore[attr-defined]
     load_dotenv()
     ocsp_fail_open = _flag_enabled("SNOWFLAKE_OCSP_FAIL_OPEN")
     disable_ocsp_checks = _flag_enabled("SNOWFLAKE_DISABLE_OCSP_CHECKS")
