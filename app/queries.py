@@ -276,8 +276,8 @@ def get_consistency_runs(
     params: Dict[str, Any] = {"limit_rows": limit_rows}
     if window_start and window_end:
         date_clause = (
-            "AND window_start_date >= %(window_start)s "
-            "AND window_end_date <= %(window_end)s"
+            "AND window_end_date >= %(window_start)s "
+            "AND window_start_date <= %(window_end)s"
         )
         params["window_start"] = window_start
         params["window_end"] = window_end

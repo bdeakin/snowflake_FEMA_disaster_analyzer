@@ -905,3 +905,24 @@ Format:
     Do both, clean up unnecessary code, and then commit this as the latest point release with notes about added functionality.
   outcome: Removed Run Now helper, updated release notes for read-only consistency checker and caller execution
   next: Commit release
+
+- timestamp: 2026-01-19 11:45
+  goal: Debug consistency filter results empty
+  prompt: |
+    Despite the existence of successful runs of the consistency checker stored procedure, the Consistency Checker interface is displaying "No consistency runs found for the selected filters."
+  outcome: Added logging around consistency filter inputs and SQL
+  next: Reproduce and inspect debug log
+
+- timestamp: 2026-01-19 11:55
+  goal: Fix consistency filters empty
+  prompt: |
+    Despite the existence of successful runs of the consistency checker stored procedure, the Consistency Checker interface is displaying "No consistency runs found for the selected filters."
+  outcome: Switched date clause to overlap window range
+  next: Re-run app and verify results display
+
+- timestamp: 2026-01-19 12:10
+  goal: Remove consistency debug logs
+  prompt: |
+    The issue has been fixed. Please clean up the instrumentation.
+  outcome: Removed consistency filter debug logging
+  next: None
