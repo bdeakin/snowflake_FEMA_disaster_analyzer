@@ -41,3 +41,4 @@ flowchart LR
 - Sunburst reset clears selection state and restarts from full hierarchy.
 - Sunburst ignores the first event after rerun to prevent unintended auto-selection.
 - Sunburst drill-in re-roots the chart at the selected node to hide prior rings.
+- Release summaries are tracked in `VERSION_HISTORY.md`.

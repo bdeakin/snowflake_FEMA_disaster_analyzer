@@ -756,3 +756,10 @@ Format:
     Go ahead and do a deeper cleanup.
   outcome: Removed empty unused directories (semantic_model/, src/)
   next: None
+
+- timestamp: 2026-01-18 21:50
+  goal: Add version history
+  prompt: |
+    Create a VERSION_HISTORY.md that summarizes the changes to the application over time.
+  outcome: Added VERSION_HISTORY.md and documented major releases
+  next: None
