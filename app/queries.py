@@ -157,44 +157,7 @@ def get_drilldown(
     )
 
 
-def get_disaster_type_bump_ranks(limit_per_decade: int = 10) -> QueryResult:
-    sql = """
-        WITH decade_counts AS (
-            SELECT
-              DATE_FROM_PARTS(
-                FLOOR(EXTRACT(year FROM disaster_declaration_date) / 10) * 10,
-                1,
-                1
-              ) AS period_decade,
-              disaster_type AS disaster_type,
-              COUNT(*) AS disaster_count
-            FROM ANALYTICS.SILVER.FCT_DISASTERS
-            WHERE disaster_declaration_date IS NOT NULL
-              AND disaster_type IS NOT NULL
-            GROUP BY
-              DATE_FROM_PARTS(
-                FLOOR(EXTRACT(year FROM disaster_declaration_date) / 10) * 10,
-                1,
-                1
-              ),
-              disaster_type
-        )
-        SELECT
-          period_decade,
-          disaster_type,
-          disaster_count,
-          DENSE_RANK() OVER (
-            PARTITION BY period_decade
-            ORDER BY disaster_count DESC, disaster_type
-          ) AS rank
-        FROM decade_counts
-        QUALIFY rank <= %(limit_per_decade)s
-        ORDER BY period_decade, rank, disaster_type
-    """
-    return fetch_df(sql, {"limit_per_decade": limit_per_decade})
-
-
-def get_sankey_rows(
+def get_sunburst_rows(
     start_date: str,
     end_date: str,
     disaster_types: Optional[list[str]] = None,
@@ -217,8 +180,72 @@ def get_sankey_rows(
     return fetch_df(sql, params)
 
 
-def get_bump_drilldown_state_summary(period_decade: str, disaster_type: str) -> QueryResult:
-    sql = """
+def get_trends_bump_ranks(
+    binning: str,
+    start_date: str,
+    end_date: str,
+    top_n: int,
+) -> QueryResult:
+    if binning == "months":
+        bucket_expr = "DATE_TRUNC('month', disaster_declaration_date)"
+    elif binning == "years":
+        bucket_expr = "DATE_TRUNC('year', disaster_declaration_date)"
+    else:
+        bucket_expr = (
+            "DATE_FROM_PARTS(FLOOR(EXTRACT(year FROM disaster_declaration_date) / 10) * 10, 1, 1)"
+        )
+
+    sql = f"""
+        WITH bucket_counts AS (
+            SELECT
+              {bucket_expr} AS period_bucket,
+              disaster_type AS disaster_type,
+              COUNT(*) AS disaster_count
+            FROM ANALYTICS.SILVER.FCT_DISASTERS
+            WHERE disaster_declaration_date BETWEEN %(start_date)s AND %(end_date)s
+              AND disaster_type IS NOT NULL
+            GROUP BY {bucket_expr}, disaster_type
+        )
+        SELECT
+          period_bucket,
+          disaster_type,
+          disaster_count,
+          DENSE_RANK() OVER (
+            PARTITION BY period_bucket
+            ORDER BY disaster_count DESC, disaster_type
+          ) AS rank
+        FROM bucket_counts
+        QUALIFY rank <= %(top_n)s
+        ORDER BY period_bucket, rank, disaster_type
+    """
+    return fetch_df(
+        sql,
+        {"start_date": start_date, "end_date": end_date, "top_n": top_n},
+    )
+
+
+def get_bump_drilldown_state_summary(
+    binning: str,
+    period_bucket: str,
+    disaster_type: str,
+) -> QueryResult:
+    if binning == "months":
+        date_filter = (
+            "disaster_declaration_date >= %(period_start)s "
+            "AND disaster_declaration_date < DATEADD('month', 1, %(period_start)s)"
+        )
+    elif binning == "years":
+        date_filter = (
+            "disaster_declaration_date >= %(period_start)s "
+            "AND disaster_declaration_date < DATEADD('year', 1, %(period_start)s)"
+        )
+    else:
+        date_filter = (
+            "disaster_declaration_date >= %(period_start)s "
+            "AND disaster_declaration_date < DATEADD('year', 10, %(period_start)s)"
+        )
+
+    sql = f"""
         SELECT
           state AS state,
           COUNT(*) AS disaster_count,
@@ -228,15 +255,11 @@ def get_bump_drilldown_state_summary(period_decade: str, disaster_type: str) -> 
           ) WITHIN GROUP (ORDER BY NULLIF(TRIM(declaration_name), '')) AS specific_disasters
         FROM ANALYTICS.SILVER.FCT_DISASTERS
         WHERE disaster_type = %(disaster_type)s
-          AND DATE_FROM_PARTS(
-            FLOOR(EXTRACT(year FROM disaster_declaration_date) / 10) * 10,
-            1,
-            1
-          ) = %(period_decade)s
+          AND {date_filter}
         GROUP BY state
         ORDER BY disaster_count DESC, state
     """
     return fetch_df(
         sql,
-        {"period_decade": period_decade, "disaster_type": disaster_type},
+        {"period_start": period_bucket, "disaster_type": disaster_type},
     )

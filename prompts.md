@@ -639,3 +639,120 @@ Format:
     I'm going to put GNEWS_API_KEY in secrets.env. Please rebuild using GNEWS.
   outcome: Switched state-click news lookup to GNews API
   next: Verify headline retrieval
+
+- timestamp: 2026-01-18 16:20
+  goal: Standardize filters and remove Sankey
+  prompt: |
+    Cursor Plan: Standardize Filter UI Across Views (Remove Sankey, Add Dynamic Left Filters)
+    Goal
+
+    Refactor the Streamlit app to standardize and centralize filter rendering, so each view (Explore, Disaster Type Trends, Sunburst) has its own independent filter set that is dynamically displayed based on the selected view.
+
+    Remove Sankey tab entirely and add per-tab sidebar filters, plus Trends binning + Top-N support.
+  outcome: Updated tabs, removed Sankey, added per-tab sidebar filters with new Trends binning
+  next: Validate UI behavior and fix any lint issues
+
+- timestamp: 2026-01-18 17:10
+  goal: Debug dynamic sidebar filters
+  prompt: |
+    When changing the tab on the top of the screen, the filter pane on the left does not refresh. Instead, it seems to display the filters for all the different reports in a single pane. This filter view should dynamically change to the appropriate filters based on what tab is selected.
+  outcome: Added debug instrumentation to trace tab sidebar rendering
+  next: Collect runtime logs and confirm root cause
+
+- timestamp: 2026-01-18 17:25
+  goal: Fix sidebar filters mixing across tabs
+  prompt: |
+    When changing the tab on the top of the screen, the filter pane on the left does not refresh. Instead, it seems to display the filters for all the different reports in a single pane. This filter view should dynamically change to the appropriate filters based on what tab is selected.
+  outcome: Switched to explicit active-tab selector and gated sidebar rendering by active tab (kept debug logs)
+  next: Reproduce and confirm sidebar shows only active tab filters
+
+- timestamp: 2026-01-18 17:40
+  goal: Remove debug instrumentation
+  prompt: |
+    The issue has been fixed. Please clean up the instrumentation.
+  outcome: Removed debug logging hooks and helper from app.py
+  next: None
+
+- timestamp: 2026-01-18 18:05
+  goal: Sunburst narratives and named events
+  prompt: |
+    On the Sunburst screen, it currently says it is "Grouping hurricanes" but it should instead be grouping "Named events" - since other events, such as Volcanic Eruptions, can also be named. Rather than presenting the LLM summarization as a modal, dynamically display the LLM summarization beneath the sunburst chart. When the user clicks into a year, use LLM summarization to produce a brief narrative about natural disasters that happened in that year. When the user clicks into a named event, use LLM summarization to produce a brief narrative about the named event and then search GNews for relevant articles related to that named event. If the user clicks into an unnamed event, use LLM summarization to produce a brief narrative about those unnamed events happening in that year. When the user clicks on a state underneath a named event, use GNews to search for any news article related to that event and then use LLM summarization to produce a brief narrative about it.
+  outcome: Updated sunburst labels to named events and added inline narratives with LLM + GNews
+  next: Validate sunburst selection narratives
+
+- timestamp: 2026-01-18 18:35
+  goal: Debug sunburst drilldown and layout
+  prompt: |
+    After clicking "Hurricane", then "2023," and then "Hurricane Idalia" the sunburst chart reverts back to the full view including all data instead of simply filtering in to show the states affected. Also, the sunburst chart is slightly cut off at the bottom - there needs to be more whitespace.
+  outcome: Added debug instrumentation around sunburst click handling
+  next: Collect runtime logs to confirm selection state loss
+
+- timestamp: 2026-01-18 18:55
+  goal: Fix sunburst drilldown reset and layout
+  prompt: |
+    After clicking "Hurricane", then "2023," and then "Hurricane Idalia" the sunburst chart reverts back to the full view including all data instead of simply filtering in to show the states affected. Also, the sunburst chart is slightly cut off at the bottom - there needs to be more whitespace.
+  outcome: Added selection-based sunburst filtering and extra bottom margin (with debug logs)
+  next: Verify filtered subtree and layout
+
+- timestamp: 2026-01-18 19:10
+  goal: Debug sunburst partial arc rendering
+  prompt: |
+    The sunburst is exhibiting strange behavior where it is showing partial arcs now rather than re-rendering the drilled down data set to the entire circular view.
+  outcome: Added diagnostics for filtered node composition
+  next: Reproduce and inspect debug log
+
+- timestamp: 2026-01-18 19:30
+  goal: Fix sunburst partial arcs
+  prompt: |
+    When clicking through a path such as: Hurricane -> 2023, the sunburst chart re-renders and displays both 2023 and 2024 as a partial circle. The rest of the chart is blank as shown here.
+  outcome: Recomputed filtered sunburst node totals and increased bottom margin
+  next: Verify full-circle drilldown renders
+
+- timestamp: 2026-01-18 19:45
+  goal: Fix sunburst year drilldown staying broad
+  prompt: |
+    After clicking "Hurricane" and then "2023" the cart re-renders 2023 and 2024 again with all sub-groupings.
+  outcome: Added rerun on sunburst selection change to apply subtree filter immediately
+  next: Verify sunburst shows only selected year
+
+- timestamp: 2026-01-18 20:05
+  goal: Fix sunburst reset and selection mapping
+  prompt: |
+    The application continues to exhibit strange behavior, re-rendering the circular view in whole or in part. The "Reset Sunburst View" button does not appear to be resetting the entire chart back to the default state.
+  outcome: Clear selection on reset and map pointNumber using filtered nodes
+  next: Verify sunburst resets and year drilldown stays focused
+
+- timestamp: 2026-01-18 20:25
+  goal: Prevent sunburst auto-selection
+  prompt: |
+    The sunburst view makes random selections after clicking 2023, auto-selecting a named event.
+  outcome: Added one-time event skip after rerun to avoid auto-selection
+  next: Verify selection stays on year unless user clicks deeper
+
+- timestamp: 2026-01-18 20:40
+  goal: Re-root sunburst on selection
+  prompt: |
+    The drilldown works but the chart re-renders full or partial rings. Inner rings should disappear after drilling.
+  outcome: Re-rooted sunburst at selected node and added selected_id to debug logs
+  next: Verify drilldown hides prior rings and state selection stays scoped
+
+- timestamp: 2026-01-18 21:00
+  goal: Remove debug instrumentation
+  prompt: |
+    The issue has been fixed. Please clean up the instrumentation.
+  outcome: Removed sunburst debug logging and helper
+  next: None
+
+- timestamp: 2026-01-18 21:20
+  goal: Clean up unnecessary code
+  prompt: |
+    Review the entire code base and clean up any unnecessary code.
+  outcome: Removed unused LLM helpers and imports
+  next: None
+
+- timestamp: 2026-01-18 21:35
+  goal: Deeper cleanup
+  prompt: |
+    Go ahead and do a deeper cleanup.
+  outcome: Removed empty unused directories (semantic_model/, src/)
+  next: None

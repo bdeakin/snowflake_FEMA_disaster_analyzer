@@ -115,9 +115,15 @@ def group_declaration_names(
     return mapping
 
 
-def estimate_hurricane_damage(
-    hurricane_name: str,
-    state: Optional[str] = None,
+def _format_pairs(items: Iterable[Tuple[str, int]], max_items: int = 8) -> str:
+    trimmed = list(items)[:max_items]
+    return ", ".join(f"{label} ({count})" for label, count in trimmed) if trimmed else "None"
+
+
+def summarize_year_events(
+    year: int,
+    top_types: Iterable[Tuple[str, int]],
+    top_events: Iterable[Tuple[str, int]],
     timeout_s: int = 25,
 ) -> str:
     api_key = os.getenv("OPENAI_API_KEY")
@@ -125,22 +131,21 @@ def estimate_hurricane_damage(
         raise RuntimeError("OPENAI_API_KEY is not set.")
 
     model = os.getenv("OPENAI_MODEL", "gpt-4o-mini")
-    scope_line = f"State: {state}\n" if state else "State: All affected states\n"
+    types_text = _format_pairs(top_types)
+    events_text = _format_pairs(top_events)
     system_prompt = (
-        "You are a disaster analyst. Provide a concise estimate of total damages in USD. "
-        "Use cautious language, provide a range if uncertain, and do not invent precise facts. "
-        "If you cannot estimate, say so explicitly."
+        "You are a concise disaster analyst. Provide a brief narrative about natural "
+        "disasters in the specified year. Use cautious language and do not invent facts."
     )
     user_prompt = (
-        f"Hurricane: {hurricane_name}\n"
-        f"{scope_line}"
-        "Return format:\n"
-        "1) One short paragraph with an estimated total damage range in USD.\n"
-        "2) One line with a single USD range, e.g., \"$10B–$15B (approx)\".\n"
+        f"Year: {year}\n"
+        f"Top disaster types (by count): {types_text}\n"
+        f"Top named events (by count): {events_text}\n"
+        "Return a short paragraph (2-4 sentences)."
     )
     payload = {
         "model": model,
-        "temperature": 0.2,
+        "temperature": 0.3,
         "messages": [
             {"role": "system", "content": system_prompt},
             {"role": "user", "content": user_prompt},
@@ -153,8 +158,11 @@ def estimate_hurricane_damage(
     return data["choices"][0]["message"]["content"].strip()
 
 
-def estimate_hurricane_year_damage(
-    hurricane_year: int,
+def summarize_named_event(
+    event_name: str,
+    year: Optional[int],
+    top_states: Iterable[Tuple[str, int]],
+    headlines: List[Dict[str, str]],
     timeout_s: int = 25,
 ) -> str:
     api_key = os.getenv("OPENAI_API_KEY")
@@ -162,20 +170,25 @@ def estimate_hurricane_year_damage(
         raise RuntimeError("OPENAI_API_KEY is not set.")
 
     model = os.getenv("OPENAI_MODEL", "gpt-4o-mini")
+    states_text = _format_pairs(top_states)
+    headline_text = "\n".join(
+        f"- {article.get('title')} ({article.get('url')})" for article in headlines
+    ) or "None"
     system_prompt = (
-        "You are a disaster analyst. Provide a concise estimate of total US hurricane damages "
-        "for a given year. Use cautious language and do not invent precise facts. "
-        "If you cannot estimate, say so explicitly."
+        "You are a concise disaster analyst. Provide a brief narrative about the named event "
+        "and summarize relevant news headlines if available. Use cautious language and do not "
+        "invent facts."
     )
     user_prompt = (
-        f"Hurricane year: {hurricane_year}\n"
-        "Return format:\n"
-        "1) One short paragraph with an estimated total damage range in USD.\n"
-        "2) One line with a single USD range, e.g., \"$10B–$15B (approx)\".\n"
+        f"Named event: {event_name}\n"
+        f"Year: {year if year is not None else 'Unknown'}\n"
+        f"Top affected states (by count): {states_text}\n"
+        f"Headlines:\n{headline_text}\n"
+        "Return a short paragraph (2-4 sentences)."
     )
     payload = {
         "model": model,
-        "temperature": 0.2,
+        "temperature": 0.3,
         "messages": [
             {"role": "system", "content": system_prompt},
             {"role": "user", "content": user_prompt},
@@ -188,10 +201,46 @@ def estimate_hurricane_year_damage(
     return data["choices"][0]["message"]["content"].strip()
 
 
-def summarize_gdelt_headlines(
-    hurricane_name: str,
+def summarize_unnamed_events(
+    year: int,
+    top_types: Iterable[Tuple[str, int]],
+    timeout_s: int = 25,
+) -> str:
+    api_key = os.getenv("OPENAI_API_KEY")
+    if not api_key:
+        raise RuntimeError("OPENAI_API_KEY is not set.")
+
+    model = os.getenv("OPENAI_MODEL", "gpt-4o-mini")
+    types_text = _format_pairs(top_types)
+    system_prompt = (
+        "You are a concise disaster analyst. Provide a brief narrative about unnamed events "
+        "in the specified year. Use cautious language and do not invent facts."
+    )
+    user_prompt = (
+        f"Year: {year}\n"
+        f"Top disaster types among unnamed events (by count): {types_text}\n"
+        "Return a short paragraph (2-4 sentences)."
+    )
+    payload = {
+        "model": model,
+        "temperature": 0.3,
+        "messages": [
+            {"role": "system", "content": system_prompt},
+            {"role": "user", "content": user_prompt},
+        ],
+    }
+    headers = {"Authorization": f"Bearer {api_key}", "Content-Type": "application/json"}
+    resp = requests.post(OPENAI_URL, json=payload, headers=headers, timeout=timeout_s)
+    resp.raise_for_status()
+    data = resp.json()
+    return data["choices"][0]["message"]["content"].strip()
+
+
+def summarize_event_state(
+    event_name: str,
     state: str,
-    articles: List[Dict[str, str]],
+    year: Optional[int],
+    headlines: List[Dict[str, str]],
     timeout_s: int = 25,
 ) -> str:
     api_key = os.getenv("OPENAI_API_KEY")
@@ -199,28 +248,24 @@ def summarize_gdelt_headlines(
         raise RuntimeError("OPENAI_API_KEY is not set.")
 
     model = os.getenv("OPENAI_MODEL", "gpt-4o-mini")
-    if not articles:
-        return "No recent articles found for this hurricane/state."
-
-    article_lines = [
-        f"- {a.get('title','').strip()} | {a.get('url','').strip()}"
-        for a in articles
-        if a.get("title") and a.get("url")
-    ]
+    headline_text = "\n".join(
+        f"- {article.get('title')} ({article.get('url')})" for article in headlines
+    ) or "None"
     system_prompt = (
-        "You are a news curator. Select the most relevant headlines for the hurricane and state. "
-        "Return a concise bullet list with the title and link. Do not invent sources."
+        "You are a concise disaster analyst. Provide a brief narrative about the named event "
+        "impact in the specified state, referencing headlines if available. Use cautious "
+        "language and do not invent facts."
     )
     user_prompt = (
-        f"Hurricane: {hurricane_name}\n"
+        f"Named event: {event_name}\n"
         f"State: {state}\n"
-        "Candidate headlines:\n"
-        + "\n".join(article_lines)
-        + "\n\nReturn up to 3 bullets: '- Title (URL)'."
+        f"Year: {year if year is not None else 'Unknown'}\n"
+        f"Headlines:\n{headline_text}\n"
+        "Return a short paragraph (2-4 sentences)."
     )
     payload = {
         "model": model,
-        "temperature": 0.2,
+        "temperature": 0.3,
         "messages": [
             {"role": "system", "content": system_prompt},
             {"role": "user", "content": user_prompt},

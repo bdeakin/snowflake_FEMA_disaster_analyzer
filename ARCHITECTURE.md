@@ -3,8 +3,8 @@
 This application provides a fast “overview → investigate → drilldown” workflow on FEMA
 disaster data hosted in Snowflake. The pipeline builds curated Silver and aggregated Gold
 datasets, and the Streamlit app renders a choropleth, a period summary, and a drilldown
-map with county-centroid jitter. A bump chart tab surfaces top disaster types by decade,
-with drilldown summaries and optional LLM context.
+map with county-centroid jitter. The UI is organized into Explore, Disaster Type Trends,
+and Sunburst tabs, each with its own independent sidebar filters.
 
 ## Core Components
 - **Snowflake Public Data**: Source FEMA tables in `SNOWFLAKE_PUBLIC_DATA_PAID.PUBLIC_DATA`.
@@ -32,3 +32,12 @@ flowchart LR
 - Gold dynamic tables provide responsive aggregation for the main view.
 - Drilldown uses county centroids; overlapping incidents are jittered for visibility.
 - LLM summaries are cached per decade/type and shown in a modal on bump selection.
+- Active tab selection controls which sidebar filters are rendered to keep state isolated.
+- Sunburst narratives render inline below the chart based on selection (year, event, state).
+- Sunburst selection filters the displayed subtree to keep focus on the active event path.
+- Sunburst filtering diagnostics track node subsets during drill-in.
+- Filtered sunburst totals are recomputed to keep full-circle rendering.
+- Sunburst selection updates trigger a rerun to apply the new subtree immediately.
+- Sunburst reset clears selection state and restarts from full hierarchy.
+- Sunburst ignores the first event after rerun to prevent unintended auto-selection.
+- Sunburst drill-in re-roots the chart at the selected node to hide prior rings.
