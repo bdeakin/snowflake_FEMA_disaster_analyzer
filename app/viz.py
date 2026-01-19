@@ -6,6 +6,7 @@ import math
 import pandas as pd
 import plotly.express as px
 import plotly.graph_objects as go
+import numpy as np
 
 
 def _jitter_pair(lat: float, lon: float, seed: str, scale: float = 0.06) -> tuple[float, float]:
@@ -36,11 +37,12 @@ def build_cube_grid(df: pd.DataFrame, grain: str):
     else:
         df["period_label"] = df["period_bucket"].dt.strftime("%Y-%m-%d")
 
+    df["disaster_count_log"] = np.log1p(df["disaster_count"])
     return px.scatter(
         df,
         x="period_label",
         y="disaster_type",
-        size="disaster_count",
+        size="disaster_count_log",
         color="disaster_count",
         color_continuous_scale="Reds",
         hover_data={"disaster_count": True, "period_label": True, "disaster_type": True},

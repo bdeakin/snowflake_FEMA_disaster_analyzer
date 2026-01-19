@@ -4,7 +4,7 @@ This application provides a fast “overview → investigate → drilldown” wo
 disaster data hosted in Snowflake. The pipeline builds curated Silver and aggregated Gold
 datasets, and the Streamlit app renders a choropleth, a period summary, and a drilldown
 map with county-centroid jitter. The UI is organized into Explore, Disaster Type Trends,
-and Sunburst tabs, each with its own independent sidebar filters.
+Sankey, and Sunburst tabs, each with its own independent sidebar filters.
 
 ## Core Components
 - **Snowflake Public Data**: Source FEMA tables in `SNOWFLAKE_PUBLIC_DATA_PAID.PUBLIC_DATA`.
@@ -14,6 +14,7 @@ and Sunburst tabs, each with its own independent sidebar filters.
 - **Gold Layer**: Aggregate dynamic tables used for fast queries by state and period.
 - **Streamlit App**: `app/app.py` drives UI and calls query helpers to render Plotly charts.
 - **LLM Summary**: Optional OpenAI summary for bump chart drilldown selections.
+- **Sankey Cache**: LLM name grouping cache stored in `ANALYTICS.MONITORING`.
 
 ## Data & UI Flow
 \n```mermaid
@@ -31,6 +32,7 @@ flowchart LR
 ## Notes
 - Gold dynamic tables provide responsive aggregation for the main view.
 - Drilldown uses county centroids; overlapping incidents are jittered for visibility.
+- Explore cube chart uses log-scaled bubble sizes to surface small counts.
 - LLM summaries are cached per decade/type and shown in a modal on bump selection.
 - Active tab selection controls which sidebar filters are rendered to keep state isolated.
 - Sunburst narratives render inline below the chart based on selection (year, event, state).
@@ -47,3 +49,4 @@ flowchart LR
 - Consistency Checker results view is refreshed on demand without triggering a run.
 - Consistency Checker failure notes record the last query error message or step name.
 - Development narrative is tracked in `DEVELOPMENT_NARRATIVE.md`.
+- Sankey uses a cached LLM grouping of declaration names per disaster record.

@@ -39,6 +39,16 @@ def fetch_df(sql: str, params: Optional[Dict[str, Any]] = None) -> QueryResult:
         conn.close()
 
 
+def execute_sql(sql: str, params: Optional[Dict[str, Any]] = None) -> None:
+    params = params or {}
+    conn = get_connection()
+    try:
+        cur = conn.cursor()
+        cur.execute(sql, params)
+    finally:
+        conn.close()
+
+
 def _in_clause(param_base: str, values: Optional[list[str]]) -> tuple[str, Dict[str, Any]]:
     if not values:
         return "", {}
@@ -62,6 +72,149 @@ def get_distinct_disaster_types() -> QueryResult:
     return fetch_df(sql)
 
 
+def get_disaster_date_bounds() -> QueryResult:
+    sql = """
+        SELECT
+          MIN(disaster_declaration_date) AS min_date,
+          MAX(disaster_declaration_date) AS max_date
+        FROM ANALYTICS.SILVER.FCT_DISASTERS
+        WHERE disaster_declaration_date IS NOT NULL
+    """
+    return fetch_df(sql)
+
+
+
+
+def get_sankey_rows(
+    start_date: str,
+    end_date: str,
+    disaster_types: Optional[list[str]] = None,
+) -> QueryResult:
+    type_clause, type_params = _in_clause("dtype", disaster_types)
+    sql = """
+        SELECT DISTINCT
+          CAST(disaster_id AS STRING) AS record_id,
+          disaster_id AS disaster_id,
+          state AS state,
+          disaster_type AS disaster_type,
+          disaster_declaration_date AS disaster_declaration_date,
+          declaration_name AS declaration_name
+        FROM ANALYTICS.SILVER.FCT_DISASTERS
+        WHERE disaster_declaration_date >= %(start_date)s
+          AND disaster_declaration_date < %(end_date)s
+          {type_clause}
+          AND state IS NOT NULL
+    """.format(type_clause=type_clause)
+    return fetch_df(
+        sql,
+        {"start_date": start_date, "end_date": end_date, **type_params},
+    )
+
+
+def get_name_grouping_cache(record_ids: list[str]) -> QueryResult:
+    if not record_ids:
+        return QueryResult(df=pd.DataFrame(), sql="", params={})
+    placeholders = []
+    params: Dict[str, Any] = {}
+    for idx, record_id in enumerate(record_ids):
+        key = f"rid{idx}"
+        placeholders.append(f"%({key})s")
+        params[key] = record_id
+    sql = f"""
+        SELECT
+          record_id AS record_id,
+          source_text_hash AS source_text_hash,
+          is_named_event AS is_named_event,
+          canonical_event_name AS canonical_event_name,
+          name_group AS name_group,
+          confidence AS confidence,
+          llm_model AS llm_model,
+          created_at AS created_at,
+          updated_at AS updated_at
+        FROM ANALYTICS.MONITORING.DISASTER_NAME_GROUPING_CACHE
+        WHERE record_id IN ({", ".join(placeholders)})
+    """
+    return fetch_df(sql, params)
+
+
+def upsert_name_grouping_cache(
+    rows: list[dict[str, Any]],
+    batch_size: int = 200,
+) -> None:
+    if not rows:
+        return
+
+    columns = [
+        "record_id",
+        "source_text_hash",
+        "is_named_event",
+        "canonical_event_name",
+        "name_group",
+        "confidence",
+        "llm_model",
+    ]
+    for start in range(0, len(rows), batch_size):
+        chunk = rows[start : start + batch_size]
+        values_sql = []
+        params: Dict[str, Any] = {}
+        for row_idx, row in enumerate(chunk):
+            placeholders = []
+            for col in columns:
+                key = f"{col}_{start}_{row_idx}"
+                placeholders.append(f"%({key})s")
+                params[key] = row.get(col)
+            values_sql.append("(" + ", ".join(placeholders) + ")")
+
+        sql = f"""
+            MERGE INTO ANALYTICS.MONITORING.DISASTER_NAME_GROUPING_CACHE AS target
+            USING (
+                SELECT
+                  column1 AS record_id,
+                  column2 AS source_text_hash,
+                  column3 AS is_named_event,
+                  column4 AS canonical_event_name,
+                  column5 AS name_group,
+                  column6 AS confidence,
+                  column7 AS llm_model
+                FROM VALUES {", ".join(values_sql)}
+            ) AS source
+            ON target.record_id = source.record_id
+            WHEN MATCHED AND target.source_text_hash <> source.source_text_hash THEN
+              UPDATE SET
+                source_text_hash = source.source_text_hash,
+                is_named_event = source.is_named_event,
+                canonical_event_name = source.canonical_event_name,
+                name_group = source.name_group,
+                confidence = source.confidence,
+                llm_model = source.llm_model,
+                updated_at = CURRENT_TIMESTAMP()
+            WHEN NOT MATCHED THEN
+              INSERT (
+                record_id,
+                source_text_hash,
+                is_named_event,
+                canonical_event_name,
+                name_group,
+                confidence,
+                llm_model,
+                created_at,
+                updated_at
+              )
+              VALUES (
+                source.record_id,
+                source.source_text_hash,
+                source.is_named_event,
+                source.canonical_event_name,
+                source.name_group,
+                source.confidence,
+                source.llm_model,
+                CURRENT_TIMESTAMP(),
+                CURRENT_TIMESTAMP()
+              )
+        """
+        execute_sql(sql, params)
+
+
 def get_state_choropleth(
     start_date: str,
     end_date: str,
@@ -74,7 +227,8 @@ def get_state_choropleth(
           state AS state,
           COUNT(*) AS disaster_count
         FROM ANALYTICS.SILVER.FCT_DISASTERS
-        WHERE disaster_declaration_date BETWEEN %(start_date)s AND %(end_date)s
+        WHERE disaster_declaration_date >= %(start_date)s
+          AND disaster_declaration_date < %(end_date)s
           {type_clause}
         GROUP BY state
     """.format(type_clause=type_clause)
@@ -110,7 +264,8 @@ def get_cube_summary(
           COUNT(*) AS disaster_count
         FROM ANALYTICS.SILVER.FCT_DISASTERS
         WHERE state = %(state)s
-          AND disaster_declaration_date BETWEEN %(start_date)s AND %(end_date)s
+          AND disaster_declaration_date >= %(start_date)s
+          AND disaster_declaration_date < %(end_date)s
           {type_clause}
         GROUP BY disaster_type, {bucket_expr}
     """
@@ -173,7 +328,8 @@ def get_sunburst_rows(
           county_fips AS county_fips,
           disaster_declaration_date AS disaster_declaration_date
         FROM ANALYTICS.SILVER.FCT_DISASTERS
-        WHERE disaster_declaration_date BETWEEN %(start_date)s AND %(end_date)s
+        WHERE disaster_declaration_date >= %(start_date)s
+          AND disaster_declaration_date < %(end_date)s
           {type_clause}
           AND state IS NOT NULL
           AND county_fips IS NOT NULL
@@ -203,7 +359,8 @@ def get_trends_bump_ranks(
               disaster_type AS disaster_type,
               COUNT(*) AS disaster_count
             FROM ANALYTICS.SILVER.FCT_DISASTERS
-            WHERE disaster_declaration_date BETWEEN %(start_date)s AND %(end_date)s
+            WHERE disaster_declaration_date >= %(start_date)s
+              AND disaster_declaration_date < %(end_date)s
               AND disaster_type IS NOT NULL
             GROUP BY {bucket_expr}, disaster_type
         )

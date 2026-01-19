@@ -62,7 +62,9 @@ Note: OCSP errors were resolved by upgrading `snowflake-connector-python` to the
      ```
      ALTER TASK ANALYTICS.MONITORING.TASK_RUN_CONSISTENCY_CHECK_12H RESUME;
      ```
-8. Run the app:
+8. Run Sankey cache setup:
+   - `sql/pipeline/22_sankey_cache.sql`
+9. Run the app:
    ```
    streamlit run app/app.py
    ```
@@ -89,8 +91,14 @@ Note: OCSP errors were resolved by upgrading `snowflake-connector-python` to the
 - `ANALYTICS.GOLD.CUBES_BY_STATE_TYPE_MONTH`
 - `ANALYTICS.GOLD.CUBES_BY_STATE_TYPE_WEEK`
 - `ANALYTICS.MONITORING.CONSISTENCY_CHECK_RUNS`
+- `ANALYTICS.MONITORING.DISASTER_NAME_GROUPING_CACHE`
 
 ## Consistency Checker
 The Consistency Checker tab surfaces 12-hour task runs that compare Public↔Silver and
-Gold↔Silver/Public metrics using a results table populated by Snowflake Tasks. Use “Run Now”
-to execute a manual check for a selected window (task schedule remains every 12 hours).
+Gold↔Silver/Public metrics using a results table populated by Snowflake Tasks. Use the
+Refresh button to reload results without triggering a run.
+
+## Sankey Name Grouping Cache
+The Sankey tab uses an LLM to group declaration names into named vs unnamed events. The
+results are cached in `ANALYTICS.MONITORING.DISASTER_NAME_GROUPING_CACHE` to avoid repeated
+LLM calls for the same records.

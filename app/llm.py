@@ -8,8 +8,6 @@ import requests
 
 
 OPENAI_URL = "https://api.openai.com/v1/chat/completions"
-
-
 def _format_top_states(states: Iterable[Tuple[str, int]]) -> str:
     items = [f"{state} ({count})" for state, count in states]
     return ", ".join(items) if items else "None"
@@ -21,7 +19,7 @@ def summarize_bump_entry(
     top_states: Iterable[Tuple[str, int]],
     timeout_s: int = 20,
 ) -> str:
-    api_key = os.getenv("OPENAI_API_KEY")
+    api_key = (os.getenv("OPENAI_API_KEY") or "").strip().strip("\"'").strip()
     if not api_key:
         raise RuntimeError("OPENAI_API_KEY is not set.")
 
@@ -69,6 +67,18 @@ def _extract_json_mapping(text: str) -> Dict[str, str]:
     return json.loads(payload)
 
 
+def _extract_json_list(text: str) -> List[Dict[str, object]]:
+    start = text.find("[")
+    end = text.rfind("]")
+    if start == -1 or end == -1 or end <= start:
+        raise ValueError("No JSON list found in response.")
+    payload = text[start : end + 1]
+    data = json.loads(payload)
+    if not isinstance(data, list):
+        raise ValueError("Expected a JSON list in response.")
+    return data
+
+
 def group_declaration_names(
     names: List[str],
     timeout_s: int = 30,
@@ -113,6 +123,63 @@ def group_declaration_names(
         for name in chunk:
             mapping[name] = chunk_map.get(name, name)
     return mapping
+
+
+def group_sankey_names(
+    records: List[Dict[str, str]],
+    timeout_s: int = 40,
+    chunk_size: int = 50,
+) -> List[Dict[str, object]]:
+    api_key = (os.getenv("OPENAI_API_KEY") or "").strip().strip("\"'").strip()
+    if not api_key:
+        raise RuntimeError("OPENAI_API_KEY is not set.")
+
+    model = os.getenv("OPENAI_MODEL", "gpt-4o-mini")
+    cleaned = [r for r in records if r.get("record_id")]
+    if not cleaned:
+        return []
+
+    system_prompt = (
+        "You classify FEMA disaster records by whether they are named events and return "
+        "a JSON list of objects. Use the provided record_id. If the name is not clearly "
+        "a named event, set is_named_event=false, canonical_event_name=null, and "
+        "name_group=\"Unnamed (<Type>)\" where <Type> is the disaster_type. "
+        "If named, set canonical_event_name to the best known name and name_group to a "
+        "concise label such as \"Hurricane Katrina\". Do not invent names."
+    )
+
+    headers = {"Authorization": f"Bearer {api_key}", "Content-Type": "application/json"}
+    results: List[Dict[str, object]] = []
+    for i in range(0, len(cleaned), chunk_size):
+        chunk = cleaned[i : i + chunk_size]
+        payload_records = [
+            {
+                "record_id": r.get("record_id"),
+                "disaster_type": r.get("disaster_type", ""),
+                "declaration_name": r.get("declaration_name", ""),
+            }
+            for r in chunk
+        ]
+        user_prompt = (
+            "Return a strict JSON list of objects with keys: record_id, "
+            "is_named_event (boolean), canonical_event_name (string or null), "
+            "name_group (string), confidence (0-1). Input records:\n"
+            + json.dumps(payload_records, ensure_ascii=True)
+        )
+        payload = {
+            "model": model,
+            "temperature": 0.1,
+            "messages": [
+                {"role": "system", "content": system_prompt},
+                {"role": "user", "content": user_prompt},
+            ],
+        }
+        resp = requests.post(OPENAI_URL, json=payload, headers=headers, timeout=timeout_s)
+        resp.raise_for_status()
+        data = resp.json()
+        content = data["choices"][0]["message"]["content"].strip()
+        results.extend(_extract_json_list(content))
+    return results
 
 
 def _format_pairs(items: Iterable[Tuple[str, int]], max_items: int = 8) -> str:

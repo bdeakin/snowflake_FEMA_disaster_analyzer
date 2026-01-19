@@ -35,6 +35,15 @@ the way. Counts are approximate, based on the project prompt history.
 - Goal: Remove in-app "Run Now" and rely on Snowflake task/manual procedure calls.
 - Outputs: Read-only results view, "Refresh Results" button, and next run metadata.
 
+### 7) Sankey (Observable Template)
+- Goal: Add a Sankey view with LLM-grouped declaration names and cached outputs.
+- Outputs: Sankey tab with year/type filters, LLM name grouping cache table, and
+  D3-based rendering via Streamlit HTML.
+
+### 8) Explore Filter Sync + Log Scale
+- Goal: Ensure small-count disasters are visible and drilldown respects filters.
+- Outputs: Log-scaled cube bubbles and filter-driven drilldown resets.
+
 ## Bug-Fix Narrative (By Category)
 
 ### Visualization Interaction / Mapping (≈8–10)
@@ -69,6 +78,7 @@ the way. Counts are approximate, based on the project prompt history.
 
 - Visualization: Sunburst is the primary exploratory visualization with inline
   narratives.
+- Visualization: Sankey provides Year → Type → Name → State flow views.
 - News/LLM: GNews-backed summaries supported with inline narratives.
 - Consistency Checker: Read-only UI with manual refresh and scheduled task metadata.
 - Monitoring: Procedure runs as caller to avoid ownership privilege gaps.

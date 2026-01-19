@@ -4,16 +4,38 @@ import os
 import importlib.util
 from pathlib import Path
 import sys
+from typing import List, Optional
 
 import pandas as pd
 import streamlit as st
 import plotly.express as px
 from streamlit_plotly_events import plotly_events
 import requests
+import streamlit.components.v1 as components
+from dotenv import load_dotenv
 
 app_dir = Path(__file__).resolve().parent
 if str(app_dir) not in sys.path:
     sys.path.insert(0, str(app_dir))
+
+def _load_env() -> None:
+    env_path = app_dir.parent / "config" / "secrets.env"
+    # Normalize OpenAI key if it exists (strip whitespace, handle quoted values).
+    current_key = os.getenv("OPENAI_API_KEY")
+    if current_key:
+        normalized = current_key.strip().strip("\"'").strip()
+        os.environ["OPENAI_API_KEY"] = normalized
+    if env_path.exists():
+        load_dotenv(env_path, override=True)
+    else:
+        load_dotenv(override=True)
+    current_key = os.getenv("OPENAI_API_KEY")
+    if current_key:
+        normalized = current_key.strip().strip("\"'").strip()
+        os.environ["OPENAI_API_KEY"] = normalized
+
+
+_load_env()
 
 def _load_module(module_name: str, file_name: str):
     file_path = app_dir / file_name
@@ -31,18 +53,23 @@ try:
         get_bump_drilldown_state_summary,
         get_consistency_runs,
         get_cube_summary,
+        get_disaster_date_bounds,
         get_distinct_disaster_types,
         get_drilldown,
         get_dynamic_table_metadata,
+        get_name_grouping_cache,
+        get_sankey_rows,
         get_state_choropleth,
         get_sunburst_rows,
         get_task_history,
         get_task_status,
         get_trends_bump_ranks,
+        upsert_name_grouping_cache,
     )
     from llm import (
         summarize_bump_entry,
         group_declaration_names,
+        group_sankey_names,
         summarize_year_events,
         summarize_named_event,
         summarize_unnamed_events,
@@ -55,23 +82,30 @@ try:
         build_drilldown,
         build_sunburst,
     )
+    from sankey import render_sankey
 except ImportError:
     queries = _load_module("app_queries", "queries.py")
     llm = _load_module("app_llm", "llm.py")
     viz = _load_module("app_viz", "viz.py")
+    sankey = _load_module("app_sankey", "sankey.py")
     get_bump_drilldown_state_summary = queries.get_bump_drilldown_state_summary
     get_consistency_runs = queries.get_consistency_runs
     get_cube_summary = queries.get_cube_summary
+    get_disaster_date_bounds = queries.get_disaster_date_bounds
     get_distinct_disaster_types = queries.get_distinct_disaster_types
     get_drilldown = queries.get_drilldown
     get_dynamic_table_metadata = queries.get_dynamic_table_metadata
+    get_name_grouping_cache = queries.get_name_grouping_cache
+    get_sankey_rows = queries.get_sankey_rows
     get_state_choropleth = queries.get_state_choropleth
     get_sunburst_rows = queries.get_sunburst_rows
     get_task_history = queries.get_task_history
     get_task_status = queries.get_task_status
     get_trends_bump_ranks = queries.get_trends_bump_ranks
+    upsert_name_grouping_cache = queries.upsert_name_grouping_cache
     summarize_bump_entry = llm.summarize_bump_entry
     group_declaration_names = llm.group_declaration_names
+    group_sankey_names = llm.group_sankey_names
     summarize_year_events = llm.summarize_year_events
     summarize_named_event = llm.summarize_named_event
     summarize_unnamed_events = llm.summarize_unnamed_events
@@ -81,6 +115,7 @@ except ImportError:
     build_cube_grid = viz.build_cube_grid
     build_drilldown = viz.build_drilldown
     build_sunburst = viz.build_sunburst
+    render_sankey = sankey.render_sankey
 
 
 st.set_page_config(page_title="FEMA Disasters Explorer", layout="wide")
@@ -89,10 +124,49 @@ st.title("FEMA Disasters Explorer")
 
 type_result = get_distinct_disaster_types()
 type_options = type_result.df["disaster_type"].dropna().tolist()
+date_bounds_result = get_disaster_date_bounds()
+date_bounds_df = date_bounds_result.df
+min_available_date = None
+max_available_date = None
+if not date_bounds_df.empty:
+    min_available_date = date_bounds_df.at[0, "min_date"]
+    max_available_date = date_bounds_df.at[0, "max_date"]
+
+
+def _render_data_range_note() -> None:
+    if min_available_date is not None and max_available_date is not None:
+        st.caption(
+            "Data availability: "
+            f"{pd.to_datetime(min_available_date).date()} → "
+            f"{pd.to_datetime(max_available_date).date()}"
+        )
+
+
+def _year_range_to_dates(year_range: tuple[int, int]) -> tuple[dt.date, dt.date]:
+    start_year, end_year = year_range
+    start_date = dt.date(start_year, 1, 1)
+    end_date = dt.date(end_year + 1, 1, 1)
+    return start_date, end_date
+
+
+def _format_year_columns(df: pd.DataFrame) -> pd.DataFrame:
+    df = df.copy()
+    for col in df.columns:
+        if "year" not in col.lower():
+            continue
+        series = df[col]
+        if pd.api.types.is_datetime64_any_dtype(series):
+            df[col] = series.dt.year.astype(int).astype(str)
+        elif pd.api.types.is_numeric_dtype(series):
+            df[col] = series.astype("Int64").astype(str)
+        else:
+            df[col] = series.astype(str).str.replace(",", "", regex=False)
+    return df
+
 
 active_tab = st.radio(
     "View",
-    ["Explore", "Disaster Type Trends", "Sunburst", "Consistency Checker"],
+    ["Explore", "Disaster Type Trends", "Sankey", "Sunburst", "Consistency Checker"],
     horizontal=True,
     key="active_tab",
 )
@@ -100,6 +174,7 @@ active_tab = st.radio(
 if active_tab == "Explore":
     with st.sidebar:
         st.subheader("Explore Filters")
+        _render_data_range_note()
         explore_years = st.slider(
             "Year range",
             min_value=2000,
@@ -107,18 +182,28 @@ if active_tab == "Explore":
             value=(2023, 2025),
             key="filters_explore_year_range",
         )
-        default_types = {"Hurricane", "Tropical Storm", "Coastal Storm"}
         explore_types = []
         for dtype in type_options:
             checked = st.checkbox(
                 dtype,
-                value=dtype in default_types,
+                value=True,
                 key=f"filters_explore_type_{dtype}",
             )
             if checked:
                 explore_types.append(dtype)
         if not explore_types:
             explore_types = None
+
+    current_filter_sig = (
+        tuple(explore_years),
+        tuple(sorted(explore_types)) if explore_types else None,
+    )
+    if st.session_state.get("explore_filter_sig") != current_filter_sig:
+        st.session_state["explore_filter_sig"] = current_filter_sig
+        st.session_state.pop("selected_state", None)
+        st.session_state.pop("selected_cube", None)
+        st.session_state.pop("declaration_color_map", None)
+        st.session_state.pop("declaration_color_index", None)
 
     def _select_grain(start: dt.date, end: dt.date) -> str:
         if end.year - start.year >= 1:
@@ -128,8 +213,7 @@ if active_tab == "Explore":
         return "week"
 
 
-    start_date = dt.date(explore_years[0], 1, 1)
-    end_date = dt.date(explore_years[1], 12, 31)
+    start_date, end_date = _year_range_to_dates(explore_years)
     selected_types = explore_types
 
     grain = _select_grain(start_date, end_date)
@@ -159,7 +243,9 @@ if active_tab == "Explore":
         st.session_state.pop("selected_cube", None)
 
     if selected_state:
-        st.subheader(f"Disaster Summary by Period: {selected_state}")
+        st.subheader(
+            f"Disaster Summary by Period: {selected_state} (log-scaled size)"
+        )
         cube_result = get_cube_summary(
             selected_state,
             start_date.isoformat(),
@@ -216,6 +302,7 @@ if active_tab == "Explore":
 elif active_tab == "Disaster Type Trends":
     with st.sidebar:
         st.subheader("Trends Filters")
+        _render_data_range_note()
         binning = st.selectbox(
             "Time binning",
             options=["decades", "years", "months"],
@@ -236,8 +323,7 @@ elif active_tab == "Disaster Type Trends":
                 value=(2000, 2025),
                 key="filters_trends_year_range",
             )
-            trends_start = dt.date(trends_years[0], 1, 1)
-            trends_end = dt.date(trends_years[1], 12, 31)
+            trends_start, trends_end = _year_range_to_dates(trends_years)
         else:
             trends_start = st.date_input(
                 "Start date",
@@ -309,7 +395,7 @@ elif active_tab == "Disaster Type Trends":
             if drilldown_summary.df.empty:
                 st.info("No drilldown data returned.")
             else:
-                st.dataframe(drilldown_summary.df, use_container_width=True)
+                st.dataframe(_format_year_columns(drilldown_summary.df), use_container_width=True)
                 top_states = (
                     drilldown_summary.df[["state", "disaster_count"]]
                     .dropna(subset=["state"])
@@ -342,9 +428,240 @@ elif active_tab == "Disaster Type Trends":
         else:
             st.caption("Select a point in the bump chart to view drilldown details.")
 
+elif active_tab == "Sankey":
+    with st.sidebar:
+        st.subheader("Sankey Filters")
+        _render_data_range_note()
+        sankey_years = st.slider(
+            "Year range",
+            min_value=2000,
+            max_value=2025,
+            value=(2023, 2025),
+            key="filters_sankey_year_range",
+        )
+        default_sankey = {"Hurricane", "Tropical Storm", "Volcanic Eruption"}
+        sankey_types = []
+        for dtype in type_options:
+            checked = st.checkbox(
+                dtype,
+                value=dtype in default_sankey,
+                key=f"filters_sankey_type_{dtype}",
+            )
+            if checked:
+                sankey_types.append(dtype)
+        if not sankey_types:
+            sankey_types = None
+
+    if not sankey_types:
+        st.info("No disaster types available to render the Sankey view.")
+    else:
+        sankey_start, sankey_end = _year_range_to_dates(sankey_years)
+        sankey_result = get_sankey_rows(
+            sankey_start.isoformat(),
+            sankey_end.isoformat(),
+            sankey_types,
+        )
+        if sankey_result.df.empty:
+            st.info("No records found for the selected filters.")
+        else:
+            df = sankey_result.df.copy()
+            df["record_id"] = df["record_id"].astype(str)
+            df["declaration_name"] = df["declaration_name"].fillna("").astype(str).str.strip()
+            df["disaster_declaration_date"] = pd.to_datetime(df["disaster_declaration_date"])
+            df["year"] = df["disaster_declaration_date"].dt.year.astype(int).astype(str)
+            df["source_text_hash"] = df.apply(
+                lambda row: hashlib.sha256(
+                    f"{row['disaster_type']}|{row['declaration_name']}".encode("utf-8")
+                ).hexdigest(),
+                axis=1,
+            )
+
+            record_ids = sorted(df["record_id"].unique().tolist())
+            cache_result = get_name_grouping_cache(record_ids)
+            cache_df = cache_result.df.copy()
+            if cache_df.empty:
+                cache_df = pd.DataFrame(
+                    columns=[
+                        "record_id",
+                        "cache_source_text_hash",
+                        "cache_name_group",
+                        "cache_is_named_event",
+                        "cache_canonical_event_name",
+                        "cache_confidence",
+                        "cache_llm_model",
+                    ]
+                )
+            else:
+                cache_df = cache_df.rename(
+                    columns={
+                        "source_text_hash": "cache_source_text_hash",
+                        "name_group": "cache_name_group",
+                        "is_named_event": "cache_is_named_event",
+                        "canonical_event_name": "cache_canonical_event_name",
+                        "confidence": "cache_confidence",
+                        "llm_model": "cache_llm_model",
+                    }
+                )
+            df = df.merge(cache_df, on="record_id", how="left")
+            needs_enrich = df["cache_source_text_hash"].isna() | (
+                df["cache_source_text_hash"] != df["source_text_hash"]
+            )
+            missing_records = (
+                df.loc[needs_enrich, ["record_id", "disaster_type", "declaration_name", "source_text_hash"]]
+                .drop_duplicates(subset=["record_id"])
+                .reset_index(drop=True)
+            )
+
+            llm_rows = []
+            if not missing_records.empty:
+                missing_count = int(missing_records.shape[0])
+                if missing_count > 5000:
+                    st.warning(
+                        "Too many uncached records to enrich at once. "
+                        "Narrow the filters or re-run after the cache warms. "
+                        "Enriching the first 500 records for now."
+                    )
+                    missing_records = missing_records.head(500)
+                llm_disabled = st.session_state.get("sankey_llm_disabled", False)
+                if not os.getenv("OPENAI_API_KEY"):
+                    st.warning(
+                        "OPENAI_API_KEY is not set. Using fallback 'Unnamed (<Type>)' labels "
+                        "for uncached records."
+                    )
+                elif llm_disabled:
+                    st.info(
+                        "OpenAI name grouping is disabled due to a prior authentication error. "
+                        "Using fallback 'Unnamed (<Type>)' labels for uncached records."
+                    )
+                else:
+                    with st.spinner("Grouping event names with OpenAI..."):
+                        try:
+                            llm_rows = group_sankey_names(
+                                missing_records[["record_id", "disaster_type", "declaration_name"]].to_dict(
+                                    "records"
+                                )
+                            )
+                        except Exception as exc:
+                            if "401" in str(exc):
+                                st.session_state["sankey_llm_disabled"] = True
+                            st.warning(
+                                "OpenAI name grouping failed. Using fallback 'Unnamed (<Type>)' labels "
+                                f"for uncached records. Error: {exc}"
+                            )
+                if llm_rows:
+                    hash_map = dict(
+                        zip(missing_records["record_id"], missing_records["source_text_hash"])
+                    )
+                    llm_model = os.getenv("OPENAI_MODEL", "gpt-4o-mini")
+                    for row in llm_rows:
+                        record_id = str(row.get("record_id"))
+                        row["record_id"] = record_id
+                        row["source_text_hash"] = hash_map.get(record_id, "")
+                        row["llm_model"] = llm_model
+                    upsert_name_grouping_cache(llm_rows)
+
+                    llm_df = pd.DataFrame(llm_rows).rename(
+                        columns={"name_group": "llm_name_group"}
+                    )
+                    df = df.merge(
+                        llm_df[["record_id", "llm_name_group"]],
+                        on="record_id",
+                        how="left",
+                    )
+            record_status = df.drop_duplicates(subset=["record_id"])[
+                ["record_id", "cache_source_text_hash", "source_text_hash"]
+            ]
+            cached_count = int(
+                (record_status["cache_source_text_hash"].notna()
+                 & (record_status["cache_source_text_hash"] == record_status["source_text_hash"])
+                ).sum()
+            )
+            total_count = int(record_status.shape[0])
+            enriched_count = len(llm_rows)
+            remaining_count = max(total_count - cached_count - enriched_count, 0)
+            st.caption(
+                "Name grouping cache status: "
+                f"cached {cached_count}/{total_count}, "
+                f"enriched {enriched_count}, "
+                f"remaining {remaining_count}."
+            )
+            df["name_group"] = df["cache_name_group"]
+            if "llm_name_group" in df.columns:
+                df["name_group"] = df["name_group"].combine_first(df["llm_name_group"])
+            missing_name = df["name_group"].isna() | (df["name_group"].astype(str).str.strip() == "")
+            if missing_name.any():
+                df.loc[missing_name, "name_group"] = df.loc[missing_name, "disaster_type"].map(
+                    lambda dtype: f"Unnamed ({dtype})"
+                )
+
+            year_counts = (
+                df.groupby(["year", "disaster_type"])["record_id"].nunique().reset_index(name="value")
+            )
+            type_counts = (
+                df.groupby(["disaster_type", "name_group"])["record_id"].nunique().reset_index(name="value")
+            )
+            state_counts = (
+                df.groupby(["name_group", "state"])["record_id"].nunique().reset_index(name="value")
+            )
+
+            nodes = []
+            node_ids = set()
+
+            def _add_node(prefix: str, label: str) -> str:
+                node_id = f"{prefix}:{label}"
+                if node_id not in node_ids:
+                    node_ids.add(node_id)
+                    nodes.append({"id": node_id, "name": label})
+                return node_id
+
+            for row in year_counts.itertuples(index=False):
+                _add_node("Y", str(row.year))
+                _add_node("T", str(row.disaster_type))
+            for row in type_counts.itertuples(index=False):
+                _add_node("T", str(row.disaster_type))
+                _add_node("N", str(row.name_group))
+            for row in state_counts.itertuples(index=False):
+                _add_node("N", str(row.name_group))
+                _add_node("S", str(row.state))
+
+            links = []
+            for row in year_counts.itertuples(index=False):
+                links.append(
+                    {
+                        "source": f"Y:{row.year}",
+                        "target": f"T:{row.disaster_type}",
+                        "value": int(row.value),
+                    }
+                )
+            for row in type_counts.itertuples(index=False):
+                links.append(
+                    {
+                        "source": f"T:{row.disaster_type}",
+                        "target": f"N:{row.name_group}",
+                        "value": int(row.value),
+                    }
+                )
+            for row in state_counts.itertuples(index=False):
+                links.append(
+                    {
+                        "source": f"N:{row.name_group}",
+                        "target": f"S:{row.state}",
+                        "value": int(row.value),
+                    }
+                )
+
+            if len(nodes) > 400:
+                st.warning(
+                    f"Too many nodes to render clearly ({len(nodes)}). Narrow the year range "
+                    "or disaster type to reduce complexity."
+                )
+            else:
+                components.html(render_sankey(nodes, links, height=650), height=670, scrolling=True)
+
 elif active_tab == "Sunburst":
     with st.sidebar:
         st.subheader("Sunburst Filters")
+        _render_data_range_note()
         sunburst_years = st.slider(
             "Year range",
             min_value=2000,
@@ -369,8 +686,7 @@ elif active_tab == "Sunburst":
     if st.button("Reset Sunburst view"):
         st.session_state["sunburst_reset_key"] = st.session_state.get("sunburst_reset_key", 0) + 1
         st.session_state.pop("sunburst_selected_node", None)
-    sunburst_start = dt.date(sunburst_years[0], 1, 1)
-    sunburst_end = dt.date(sunburst_years[1], 12, 31)
+    sunburst_start, sunburst_end = _year_range_to_dates(sunburst_years)
     sunburst_result = get_sunburst_rows(
         sunburst_start.isoformat(),
         sunburst_end.isoformat(),
@@ -748,14 +1064,14 @@ elif active_tab == "Consistency Checker":
     if task_status.empty:
         st.info("Task metadata not available.")
     else:
-        st.dataframe(task_status, use_container_width=True)
+        st.dataframe(_format_year_columns(task_status), use_container_width=True)
         if "next_scheduled_time" in task_status.columns:
             next_run = task_status["next_scheduled_time"].dropna()
             if not next_run.empty:
                 st.caption(f"Next scheduled run: {next_run.iloc[0]}")
         with st.expander("Task history (last 5 runs)"):
             history_df = get_task_history(task_names, limit_rows=5).df
-            st.dataframe(history_df, use_container_width=True)
+            st.dataframe(_format_year_columns(history_df), use_container_width=True)
 
     st.subheader("Dynamic Tables")
     dt_names = [
@@ -835,5 +1151,5 @@ elif active_tab == "Consistency Checker":
             "notes",
         ]
         existing_cols = [col for col in display_cols if col in results.columns]
-        st.dataframe(results[existing_cols], use_container_width=True)
+        st.dataframe(_format_year_columns(results[existing_cols]), use_container_width=True)
 

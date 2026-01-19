@@ -715,221 +715,23 @@ Format:
   prompt: |
     When I click "Run now" the following error occurs: Failed to run consistency check: Unknown error. However, it appears that a row is created in consistency results.
   outcome: Downgraded Run Now errors to warning and continue to show results
-  next: Retry Run Now and verify results row
-
-- timestamp: 2026-01-19 04:20
-  goal: Fix Run Now unknown error fetch
+  next: Retry Run Now and verify results row- timestamp: 2026-01-19 04:10
+  goal: Debug Run Now stored procedure failure
   prompt: |
-    Issue reproduced, please proceed.
-  outcome: Added fetchall fallback for NotSupportedError after CALL execution
-  next: Re-run Run Now and verify logs/results
+    When I click "Run Now" the following error occurs: Run Now returned an error, but a results row may still have been recorded. Error: Unknown error. The results rows show Stored procedure failed.
+  outcome: Added runtime debug logging around Run Now and consistency check execution
+  next: Reproduce Run Now and inspect debug logs
 
-- timestamp: 2026-01-19 04:35
-  goal: Debug stored procedure failure details
+- timestamp: 2026-01-19 12:45
+  goal: Add Sankey tab with LLM name grouping cache
   prompt: |
-    "Run Now" reported that "Consistency check started"; however, the consistency check row is still in error with the same results as previous.
-  outcome: Added monitoring debug table and step markers to consistency procedure
-  next: Re-run 21_consistency.sql and inspect debug table
+    Implement the plan as specified, it is attached for your reference.
+  outcome: Added Sankey tab, D3 renderer, LLM grouping cache, and Snowflake DDL
+  next: Run app smoke test
 
-- timestamp: 2026-01-19 04:45
-  goal: Fix V_STEP identifier error
+- timestamp: 2026-01-19 13:35
+  goal: Explore chart scale + filter sync + Sankey multi-select
   prompt: |
-    Run Now returned an error: SQL compilation error invalid identifier 'V_STEP'.
-  outcome: Bound v_step/v_detail with colon in exception notes expression
-  next: Re-run 21_consistency.sql and retry Run Now
-
-- timestamp: 2026-01-19 05:00
-  goal: Capture Run Now return and latest status
-  prompt: |
-    Issue reproduced, please proceed.
-  outcome: Logged stored procedure return value and latest consistency run row
-  next: Re-run Run Now and inspect debug logs
-
-- timestamp: 2026-01-19 05:15
-  goal: Avoid metadata lookup failure abort
-  prompt: |
-    Issue reproduced, please proceed.
-  outcome: Wrapped SHOW DYNAMIC TABLES + RESULT_SCAN in exception handler to allow metrics to continue
-  next: Re-run 21_consistency.sql and retry Run Now
-
-- timestamp: 2026-01-19 05:30
-  goal: Isolate metrics_insert failure
-  prompt: |
-    Issue reproduced, please proceed.
-  outcome: Added pre-insert row count debug steps for public/silver/gold
-  next: Re-run 21_consistency.sql and retry Run Now
-
-- timestamp: 2026-01-19 05:45
-  goal: Capture gold_rows query error
-  prompt: |
-    Issue reproduced, please proceed.
-  outcome: Added query history lookup to gold_rows error debug step
-  next: Re-run 21_consistency.sql and retry Run Now
-
-- timestamp: 2026-01-19 06:00
-  goal: Surface debug table rows in logs
-  prompt: |
-    Issue reproduced, please proceed.
-  outcome: Added app-side fetch of CONSISTENCY_CHECK_DEBUG for latest run
-  next: Re-run Run Now and inspect debug rows
-
-- timestamp: 2026-01-19 06:15
-  goal: Capture latest-status logging failure
-  prompt: |
-    Issue reproduced, please proceed.
-  outcome: Added error log when latest status/debug fetch fails
-  next: Re-run Run Now and inspect debug logs
-
-- timestamp: 2026-01-19 06:25
-  goal: Fix latest status log serialization
-  prompt: |
-    Issue reproduced, please proceed.
-  outcome: Used json.dumps(default=str) for latest status debug log
-  next: Re-run Run Now and inspect debug logs
-
-- timestamp: 2026-01-19 06:35
-  goal: Capture gold table schema
-  prompt: |
-    Issue reproduced, please proceed.
-  outcome: Added logging of GOLD.DISASTERS_BY_STATE column list when gold_rows fails
-  next: Re-run Run Now and inspect debug logs
-
-- timestamp: 2026-01-19 06:50
-  goal: Diagnose gold table column access
-  prompt: |
-    Issue reproduced, please proceed.
-  outcome: Added get_table_columns logging and SHOW COLUMNS fallback
-  next: Re-run Run Now and inspect debug logs
-
-- timestamp: 2026-01-19 07:05
-  goal: Diagnose gold_rows table access
-  prompt: |
-    Issue reproduced, please proceed.
-  outcome: Qualified analytics information_schema and added gold table existence debug step
-  next: Re-run 21_consistency.sql and retry Run Now
-
-- timestamp: 2026-01-19 07:20
-  goal: Capture metrics insert failure details
-  prompt: |
-    Issue reproduced, please proceed.
-  outcome: Wrapped metrics insert in exception handler and logged query error
-  next: Re-run 21_consistency.sql and retry Run Now
-
-- timestamp: 2026-01-19 07:35
-  goal: Capture metrics insert error message
-  prompt: |
-    Issue reproduced, please proceed.
-  outcome: Used SHOW QUERIES + RESULT_SCAN for error text
-  next: Re-run 21_consistency.sql and retry Run Now
-
-- timestamp: 2026-01-19 07:50
-  goal: Confirm metrics insert success marker
-  prompt: |
-    Issue reproduced, please proceed.
-  outcome: Added metrics_insert_ok debug marker after successful insert
-  next: Re-run 21_consistency.sql and retry Run Now
-
-- timestamp: 2026-01-19 08:05
-  goal: Simplify Consistency Checker UI
-  prompt: |
-    Execute. Add in a refresh button on the Consistency Checker.
-  outcome: Removed Run Now, added Refresh Results, showed next scheduled run time
-  next: Verify consistency results and task metadata
-
-- timestamp: 2026-01-19 08:20
-  goal: Remove Run Now debug scaffolding
-  prompt: |
-    Yes, remove the Run Now debug scaffolding from 21_consistency.sql
-  outcome: Removed debug table and debug blocks from consistency procedure
-  next: Re-run 21_consistency.sql to update monitoring objects
-
-- timestamp: 2026-01-19 08:30
-  goal: Drop debug table
-  prompt: |
-    Let's also drop the unnecessary consistency_check_debug table
-  outcome: Added DROP TABLE IF EXISTS for CONSISTENCY_CHECK_DEBUG in 21_consistency.sql
-  next: Re-run 21_consistency.sql
-
-- timestamp: 2026-01-19 08:45
-  goal: Remove leftover debug vars in SP
-  prompt: |
-    Execute.
-  outcome: Removed v_step/v_detail debug writes from SP exception block
-  next: Re-run 21_consistency.sql and retry procedure call
-
-- timestamp: 2026-01-19 09:10
-  goal: Capture SP error message in notes
-  prompt: |
-    Apply the change directly.
-  outcome: Added minimal error capture to SP_RUN_CONSISTENCY_CHECK notes
-  next: Re-run 21_consistency.sql and retry SP call
-
-- timestamp: 2026-01-19 09:35
-  goal: Add step name to SP error notes
-  prompt: |
-    It just says "Stored procedure failed" in the Notes column
-  outcome: Added step-name fallback in SP error notes
-  next: Re-run 21_consistency.sql and retry SP call
-
-- timestamp: 2026-01-19 09:55
-  goal: Use step name when error message unavailable
-  prompt: |
-    Apply directly.
-  outcome: Changed error fallback to use step name when error msg missing
-  next: Re-run 21_consistency.sql and retry SP call
-
-- timestamp: 2026-01-19 10:15
-  goal: Allow metadata lookup to fail gracefully
-  prompt: |
-    Apply directly
-  outcome: Wrapped dynamic table metadata lookup in exception handler
-  next: Re-run 21_consistency.sql and retry SP call
-
-- timestamp: 2026-01-19 10:45
-  goal: Run procedure as caller
-  prompt: |
-    Apply the changes to 21_consistency.sql directly
-  outcome: Set SP_RUN_CONSISTENCY_CHECK to EXECUTE AS CALLER
-  next: Re-run 21_consistency.sql and retry SP call
-
-- timestamp: 2026-01-19 11:05
-  goal: Fix SP variable binding errors
-  prompt: |
-    Here are the results: @/Users/bdeakin/Downloads/Untitled_2026-01-19-0046.tsv
-  outcome: Bound SP variables with colon and used last_refresh column
-  next: Re-run 21_consistency.sql and retry SP call
-
-- timestamp: 2026-01-19 11:20
-  goal: Finalize consistency checker release
-  prompt: |
-    Do both, clean up unnecessary code, and then commit this as the latest point release with notes about added functionality.
-  outcome: Removed Run Now helper, updated release notes for read-only consistency checker and caller execution
-  next: Commit release
-
-- timestamp: 2026-01-19 11:45
-  goal: Debug consistency filter results empty
-  prompt: |
-    Despite the existence of successful runs of the consistency checker stored procedure, the Consistency Checker interface is displaying "No consistency runs found for the selected filters."
-  outcome: Added logging around consistency filter inputs and SQL
-  next: Reproduce and inspect debug log
-
-- timestamp: 2026-01-19 11:55
-  goal: Fix consistency filters empty
-  prompt: |
-    Despite the existence of successful runs of the consistency checker stored procedure, the Consistency Checker interface is displaying "No consistency runs found for the selected filters."
-  outcome: Switched date clause to overlap window range
-  next: Re-run app and verify results display
-
-- timestamp: 2026-01-19 12:10
-  goal: Remove consistency debug logs
-  prompt: |
-    The issue has been fixed. Please clean up the instrumentation.
-  outcome: Removed consistency filter debug logging
-  next: None
-
-- timestamp: 2026-01-19 12:30
-  goal: Add development narrative
-  prompt: |
-    Go ahead.
-  outcome: Added DEVELOPMENT_NARRATIVE.md with plan-based narrative and bug categories
-  next: Commit and push
+    On the Explore Tab under Disaster Summary, some Disaster Types have such a small number...
+  outcome: Log-scaled cube bubbles, drilldown resets on filter changes, Sankey multi-select defaults
+  next: Commit point release

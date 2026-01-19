@@ -3,6 +3,16 @@
 This file summarizes notable changes to the FEMA Disasters Explorer over time. It is
 intended as a high-level narrative; see `git log` for exhaustive details.
 
+## v1.9
+- Explore cube chart now uses log-scaled bubble sizes for small counts.
+- Explore drilldown resets on filter changes to keep results in sync.
+- Sankey filters support multi-select defaults and year formatting improvements.
+
+## v1.8
+- Added a Sankey tab with year/type filters and D3-based rendering.
+- Implemented LLM name grouping with a persistent cache in `ANALYTICS.MONITORING`.
+- Added Snowflake DDL for the name grouping cache table.
+
 ## v1.7
 - Consistency Checker now read-only in-app with manual refresh and next run time display.
 - Consistency checks run as caller to avoid task-owner permission gaps.
