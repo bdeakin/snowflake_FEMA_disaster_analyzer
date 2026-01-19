@@ -46,3 +46,4 @@ flowchart LR
 - Consistency Checker displays scheduled task metadata and the next scheduled run time.
 - Consistency Checker results view is refreshed on demand without triggering a run.
 - Consistency Checker failure notes record the last query error message or step name.
+- Development narrative is tracked in `DEVELOPMENT_NARRATIVE.md`.
