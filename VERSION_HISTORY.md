@@ -3,6 +3,11 @@
 This file summarizes notable changes to the FEMA Disasters Explorer over time. It is
 intended as a high-level narrative; see `git log` for exhaustive details.
 
+## v1.7
+- Consistency Checker now read-only in-app with manual refresh and next run time display.
+- Consistency checks run as caller to avoid task-owner permission gaps.
+- Monitoring SQL cleaned of debug scaffolding and sync error reporting improved.
+
 ## v1.6
 - Sunburst drilldown behavior stabilized: re-rooted views, subtree filtering, and inline narratives.
 - Sunburst now supports named event narratives with GNews + LLM summaries.

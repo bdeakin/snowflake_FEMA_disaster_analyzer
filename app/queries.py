@@ -24,7 +24,8 @@ def fetch_df(sql: str, params: Optional[Dict[str, Any]] = None) -> QueryResult:
         try:
             df = cur.fetch_pandas_all()
         except Exception as exc:
-            if "254007" in str(exc):
+            fallback_allowed = "254007" in str(exc) or type(exc).__name__ == "NotSupportedError"
+            if fallback_allowed:
                 rows = cur.fetchall()
                 cols = [desc[0] for desc in cur.description] if cur.description else []
                 df = pd.DataFrame(rows, columns=cols)
@@ -263,3 +264,120 @@ def get_bump_drilldown_state_summary(
         sql,
         {"period_start": period_bucket, "disaster_type": disaster_type},
     )
+
+
+def get_consistency_runs(
+    window_start: Optional[str],
+    window_end: Optional[str],
+    status_filters: Optional[list[str]],
+    limit_rows: int = 100,
+) -> QueryResult:
+    date_clause = ""
+    params: Dict[str, Any] = {"limit_rows": limit_rows}
+    if window_start and window_end:
+        date_clause = (
+            "AND window_start_date >= %(window_start)s "
+            "AND window_end_date <= %(window_end)s"
+        )
+        params["window_start"] = window_start
+        params["window_end"] = window_end
+
+    status_clause = ""
+    if status_filters:
+        placeholders = []
+        for idx, value in enumerate(status_filters):
+            key = f"status{idx}"
+            placeholders.append(f"%({key})s")
+            params[key] = value
+        status_clause = (
+            "AND (silver_vs_public_status IN (" + ", ".join(placeholders) + ") "
+            "OR gold_vs_silver_status IN (" + ", ".join(placeholders) + ") "
+            "OR gold_vs_public_status IN (" + ", ".join(placeholders) + "))"
+        )
+
+    table_name = "ANALYTICS.MONITORING.CONSISTENCY_CHECK_RUNS"
+    sql = f"""
+        SELECT *
+        FROM {table_name}
+        WHERE 1=1
+          {date_clause}
+          {status_clause}
+        ORDER BY run_ts DESC
+        LIMIT %(limit_rows)s
+    """
+    return fetch_df(sql, params)
+
+
+def get_dynamic_table_metadata(table_fqns: list[str]) -> QueryResult:
+    if not table_fqns:
+        return QueryResult(df=pd.DataFrame(), sql="", params={})
+    table_names = [name.split(".")[-1].upper() for name in table_fqns]
+    conn = get_connection()
+    try:
+        cur = conn.cursor()
+        cur.execute("SHOW DYNAMIC TABLES IN DATABASE ANALYTICS")
+        cur.execute("SELECT * FROM TABLE(RESULT_SCAN(LAST_QUERY_ID()))")
+        df = cur.fetch_pandas_all()
+        df.columns = [str(c).lower() for c in df.columns]
+        if "name" in df.columns:
+            df = df[df["name"].str.upper().isin(table_names)]
+        return QueryResult(df=df, sql="SHOW DYNAMIC TABLES IN DATABASE ANALYTICS", params={})
+    finally:
+        conn.close()
+
+
+def get_task_status(task_fqns: list[str]) -> QueryResult:
+    if not task_fqns:
+        return QueryResult(df=pd.DataFrame(), sql="", params={})
+    task_names = [name.split(".")[-1].upper() for name in task_fqns]
+    clause, params = _in_clause("tsk", task_names)
+    sql = f"""
+        SELECT
+          name,
+          database_name,
+          schema_name,
+          state,
+          schedule,
+          warehouse,
+          comment,
+          next_scheduled_time,
+          last_successful_run_time,
+          last_suspended_time
+        FROM SNOWFLAKE.ACCOUNT_USAGE.TASKS
+        WHERE database_name = 'ANALYTICS'
+          {clause.replace('disaster_type', 'name')}
+        ORDER BY name
+    """
+    try:
+        return fetch_df(sql, params)
+    except Exception:
+        return QueryResult(df=pd.DataFrame(), sql=sql, params=params)
+
+
+def get_task_history(task_fqns: list[str], limit_rows: int = 5) -> QueryResult:
+    if not task_fqns:
+        return QueryResult(df=pd.DataFrame(), sql="", params={})
+    task_names = [name.split(".")[-1].upper() for name in task_fqns]
+    clause, params = _in_clause("tsk", task_names)
+    params["limit_rows"] = limit_rows
+    sql = f"""
+        SELECT
+          name,
+          database_name,
+          schema_name,
+          state,
+          scheduled_time,
+          completed_time,
+          error_message
+        FROM SNOWFLAKE.ACCOUNT_USAGE.TASK_HISTORY
+        WHERE database_name = 'ANALYTICS'
+          {clause.replace('disaster_type', 'name')}
+        ORDER BY scheduled_time DESC
+        LIMIT %(limit_rows)s
+    """
+    try:
+        return fetch_df(sql, params)
+    except Exception:
+        return QueryResult(df=pd.DataFrame(), sql=sql, params=params)
+
+

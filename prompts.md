@@ -604,162 +604,304 @@ Format:
   outcome: Prompt updated for overview + bullets; modal dialog used
   next: Validate with quota
 
-
-- timestamp: 2026-01-18 15:20
-  goal: Cortex PAT auth failure
+- timestamp: 2026-01-18 13:20
+  goal: Cortex Analyst via REST
   prompt: |
-    This error is occurring when running on Streamlit in Snowflake: Cortex Analyst REST unauthorized (PAT mode)... oauth-protected-resource...
-  outcome: Confirmed endpoint is OAuth-protected; advised PAT not accepted
-  next: Decide on OAuth vs SiS-only
+    The code needs to be re-factored to ensure it is using the Cortex Analyst REST API, not relying on SQL system functions.
+  outcome: Planned REST-only paths for SiS + local
+  next: Implement REST client and update docs
 
-- timestamp: 2026-01-18 15:30
-  goal: New account env update
+- timestamp: 2026-01-18 13:35
+  goal: PAT-only Cortex Analyst
   prompt: |
-    I've updated the snowflake_account.
-  outcome: Updated secrets.env and resumed rebuild
-  next: Re-run Silver/Gold pipeline
+    Rebuild the application to use programmatic access tokens (PAT) for Cortex Analyst.
+  outcome: PAT-only mode implemented with secrets.env loading and clearer 401 messaging
+  next: Validate PAT behavior
 
-- timestamp: 2026-01-18 15:35
-  goal: Enable public data
+- timestamp: 2026-01-18 13:50
+  goal: Cortex REST troubleshooting
   prompt: |
-    I've added public data to the account. It should be accessible now.
-  outcome: Rebuilt Silver/Gold and validated row counts
-  next: Verify app renders
+    Can you design a curl request to test the endpoint from the command line against this REST endpoint?
+  outcome: Provided curl template for /api/v2/cortex/analyst/message
+  next: Test endpoint permissions
 
-- timestamp: 2026-01-18 16:40
-  goal: Sunburst hierarchy adjustment
+- timestamp: 2026-01-18 14:10
+  goal: Streamlit Cloud secrets support
   prompt: |
-    The problem is that Hurricane Helene hit North Carolina as a tropical storm. Therefore, it will be necessary to also consider named Tropical Storms in the Sunburst Chart. The top-level should be coalesced into Named Hurricanes and Tropical Storms. Also, update the prompts.md based on the prompts provided so far.
-  outcome: Added Tropical Storms into sunburst categories and updated prompts log
-  next: Validate NC appears under Tropical Storms
+    When attempting to open Cortex Analyst on Streamlit in Snowflake, this error is displayed: Cortex Search requires Snowflake credentials or Streamlit in Snowflake.
+  outcome: Added st.secrets fallback for SNOWFLAKE_* and updated UI guidance
+  next: Verify secrets setup in Cloud
 
-- timestamp: 2026-01-18 16:55
-  goal: GNews integration
+- timestamp: 2026-01-18 14:25
+  goal: Remove debug logging errors
   prompt: |
-    I'm going to put GNEWS_API_KEY in secrets.env. Please rebuild using GNEWS.
-  outcome: Switched state-click news lookup to GNews API
-  next: Verify headline retrieval
+    This error occurred: Cortex Analyst call failed: [Errno 2] No such file or directory: '/.../.cursor/debug.log'
+  outcome: Removed debug logger and hardcoded log path
+  next: Commit cleanup
 
-- timestamp: 2026-01-18 16:20
-  goal: Standardize filters and remove Sankey
+- timestamp: 2026-01-18 14:40
+  goal: New account rebuild
   prompt: |
-    Cursor Plan: Standardize Filter UI Across Views (Remove Sankey, Add Dynamic Left Filters)
-    Goal
+    I have to setup a new Snowflake Enterprise account... regenerate ANALYTICS and county centroids... update code for new env vars.
+  outcome: Rebuilt ANALYTICS, reloaded centroids, rebuilt Silver/Gold in new account
+  next: Validate app UI flow
 
-    Refactor the Streamlit app to standardize and centralize filter rendering, so each view (Explore, Disaster Type Trends, Sunburst) has its own independent filter set that is dynamically displayed based on the selected view.
-
-    Remove Sankey tab entirely and add per-tab sidebar filters, plus Trends binning + Top-N support.
-  outcome: Updated tabs, removed Sankey, added per-tab sidebar filters with new Trends binning
-  next: Validate UI behavior and fix any lint issues
-
-- timestamp: 2026-01-18 17:10
-  goal: Debug dynamic sidebar filters
+- timestamp: 2026-01-18 14:55
+  goal: Run command
   prompt: |
-    When changing the tab on the top of the screen, the filter pane on the left does not refresh. Instead, it seems to display the filters for all the different reports in a single pane. This filter view should dynamically change to the appropriate filters based on what tab is selected.
-  outcome: Added debug instrumentation to trace tab sidebar rendering
-  next: Collect runtime logs and confirm root cause
+    Give me the fully qualified command line to run the application.
+  outcome: Provided command with cd + python3 + streamlit run
+  next: Run app and verify
 
-- timestamp: 2026-01-18 17:25
-  goal: Fix sidebar filters mixing across tabs
+- timestamp: 2026-01-18 15:05
+  goal: Prompts log update
   prompt: |
-    When changing the tab on the top of the screen, the filter pane on the left does not refresh. Instead, it seems to display the filters for all the different reports in a single pane. This filter view should dynamically change to the appropriate filters based on what tab is selected.
-  outcome: Switched to explicit active-tab selector and gated sidebar rendering by active tab (kept debug logs)
-  next: Reproduce and confirm sidebar shows only active tab filters
+    Update the prompts.md file based on prompts entered so far.
+  outcome: Appended recent prompts and outcomes
+  next: Commit if requested
 
-- timestamp: 2026-01-18 17:40
-  goal: Remove debug instrumentation
-  prompt: |
-    The issue has been fixed. Please clean up the instrumentation.
-  outcome: Removed debug logging hooks and helper from app.py
-  next: None
 
-- timestamp: 2026-01-18 18:05
-  goal: Sunburst narratives and named events
+- timestamp: 2026-01-19 02:00
+  goal: Implement 12-hour Consistency Checker
   prompt: |
-    On the Sunburst screen, it currently says it is "Grouping hurricanes" but it should instead be grouping "Named events" - since other events, such as Volcanic Eruptions, can also be named. Rather than presenting the LLM summarization as a modal, dynamically display the LLM summarization beneath the sunburst chart. When the user clicks into a year, use LLM summarization to produce a brief narrative about natural disasters that happened in that year. When the user clicks into a named event, use LLM summarization to produce a brief narrative about the named event and then search GNews for relevant articles related to that named event. If the user clicks into an unnamed event, use LLM summarization to produce a brief narrative about those unnamed events happening in that year. When the user clicks on a state underneath a named event, use GNews to search for any news article related to that event and then use LLM summarization to produce a brief narrative about it.
-  outcome: Updated sunburst labels to named events and added inline narratives with LLM + GNews
-  next: Validate sunburst selection narratives
+    Implement the 12-hour Consistency Checker with ANALYTICS.MONITORING and no disaster type filter.
+  outcome: Replaced monitoring schema/task, updated UI, SQL, and docs
+  next: Re-run 21_consistency.sql and resume task
 
-- timestamp: 2026-01-18 18:35
-  goal: Debug sunburst drilldown and layout
+- timestamp: 2026-01-19 02:20
+  goal: Fix consistency SQL insert syntax
   prompt: |
-    After clicking "Hurricane", then "2023," and then "Hurricane Idalia" the sunburst chart reverts back to the full view including all data instead of simply filtering in to show the states affected. Also, the sunburst chart is slightly cut off at the bottom - there needs to be more whitespace.
-  outcome: Added debug instrumentation around sunburst click handling
-  next: Collect runtime logs to confirm selection state loss
+    SQL compilation error: syntax error line 169 at position 2 unexpected 'INSERT'.
+  outcome: Reordered INSERT to precede CTE and bound date variables
+  next: Re-run 21_consistency.sql
 
-- timestamp: 2026-01-18 18:55
-  goal: Fix sunburst drilldown reset and layout
+- timestamp: 2026-01-19 02:40
+  goal: Fix consistency results filter columns
   prompt: |
-    After clicking "Hurricane", then "2023," and then "Hurricane Idalia" the sunburst chart reverts back to the full view including all data instead of simply filtering in to show the states affected. Also, the sunburst chart is slightly cut off at the bottom - there needs to be more whitespace.
-  outcome: Added selection-based sunburst filtering and extra bottom margin (with debug logs)
-  next: Verify filtered subtree and layout
+    SQL compilation error: invalid identifier 'WINDOW_START' in Consistency Checker results query.
+  outcome: Updated results query to use window_start_date/window_end_date
+  next: Reload Consistency Checker tab
 
-- timestamp: 2026-01-18 19:10
-  goal: Debug sunburst partial arc rendering
+- timestamp: 2026-01-19 02:55
+  goal: Fix consistency status filter column
   prompt: |
-    The sunburst is exhibiting strange behavior where it is showing partial arcs now rather than re-rendering the drilled down data set to the entire circular view.
-  outcome: Added diagnostics for filtered node composition
-  next: Reproduce and inspect debug log
+    SQL compilation error: invalid identifier 'PUBLIC_VS_SILVER_STATUS'.
+  outcome: Updated status filter to use silver_vs_public_status
+  next: Reload Consistency Checker tab
 
-- timestamp: 2026-01-18 19:30
-  goal: Fix sunburst partial arcs
+- timestamp: 2026-01-19 03:10
+  goal: Fix Run Now variable binding error
   prompt: |
-    When clicking through a path such as: Hurricane -> 2023, the sunburst chart re-renders and displays both 2023 and 2024 as a partial circle. The rest of the chart is blank as shown here.
-  outcome: Recomputed filtered sunburst node totals and increased bottom margin
-  next: Verify full-circle drilldown renders
+    Failed to run consistency check: invalid identifier 'V_START'.
+  outcome: Bound v_start/v_end with colon in exception insert
+  next: Re-run 21_consistency.sql and try Run Now
 
-- timestamp: 2026-01-18 19:45
-  goal: Fix sunburst year drilldown staying broad
+- timestamp: 2026-01-19 03:25
+  goal: Fix SQLERRM reference in consistency SP
   prompt: |
-    After clicking "Hurricane" and then "2023" the cart re-renders 2023 and 2024 again with all sub-groupings.
-  outcome: Added rerun on sunburst selection change to apply subtree filter immediately
-  next: Verify sunburst shows only selected year
+    Failed to run consistency check: invalid identifier 'SQLERRM'.
+  outcome: Replaced SQLERRM with static error text in exception handler
+  next: Re-run 21_consistency.sql and try Run Now
 
-- timestamp: 2026-01-18 20:05
-  goal: Fix sunburst reset and selection mapping
+- timestamp: 2026-01-19 03:40
+  goal: Fix UUID_STRING error in exception insert
   prompt: |
-    The application continues to exhibit strange behavior, re-rendering the circular view in whole or in part. The "Reset Sunburst View" button does not appear to be resetting the entire chart back to the default state.
-  outcome: Clear selection on reset and map pointNumber using filtered nodes
-  next: Verify sunburst resets and year drilldown stays focused
+    Failed to run consistency check: Invalid expression [UUID_STRING()] in VALUES clause.
+  outcome: Generate error UUID/timestamp in variables and insert via SELECT
+  next: Re-run 21_consistency.sql and try Run Now
 
-- timestamp: 2026-01-18 20:25
-  goal: Prevent sunburst auto-selection
+- timestamp: 2026-01-19 03:55
+  goal: Handle Run Now unknown error
   prompt: |
-    The sunburst view makes random selections after clicking 2023, auto-selecting a named event.
-  outcome: Added one-time event skip after rerun to avoid auto-selection
-  next: Verify selection stays on year unless user clicks deeper
+    When I click "Run now" the following error occurs: Failed to run consistency check: Unknown error. However, it appears that a row is created in consistency results.
+  outcome: Downgraded Run Now errors to warning and continue to show results
+  next: Retry Run Now and verify results row
 
-- timestamp: 2026-01-18 20:40
-  goal: Re-root sunburst on selection
+- timestamp: 2026-01-19 04:20
+  goal: Fix Run Now unknown error fetch
   prompt: |
-    The drilldown works but the chart re-renders full or partial rings. Inner rings should disappear after drilling.
-  outcome: Re-rooted sunburst at selected node and added selected_id to debug logs
-  next: Verify drilldown hides prior rings and state selection stays scoped
+    Issue reproduced, please proceed.
+  outcome: Added fetchall fallback for NotSupportedError after CALL execution
+  next: Re-run Run Now and verify logs/results
 
-- timestamp: 2026-01-18 21:00
-  goal: Remove debug instrumentation
+- timestamp: 2026-01-19 04:35
+  goal: Debug stored procedure failure details
   prompt: |
-    The issue has been fixed. Please clean up the instrumentation.
-  outcome: Removed sunburst debug logging and helper
-  next: None
+    "Run Now" reported that "Consistency check started"; however, the consistency check row is still in error with the same results as previous.
+  outcome: Added monitoring debug table and step markers to consistency procedure
+  next: Re-run 21_consistency.sql and inspect debug table
 
-- timestamp: 2026-01-18 21:20
-  goal: Clean up unnecessary code
+- timestamp: 2026-01-19 04:45
+  goal: Fix V_STEP identifier error
   prompt: |
-    Review the entire code base and clean up any unnecessary code.
-  outcome: Removed unused LLM helpers and imports
-  next: None
+    Run Now returned an error: SQL compilation error invalid identifier 'V_STEP'.
+  outcome: Bound v_step/v_detail with colon in exception notes expression
+  next: Re-run 21_consistency.sql and retry Run Now
 
-- timestamp: 2026-01-18 21:35
-  goal: Deeper cleanup
+- timestamp: 2026-01-19 05:00
+  goal: Capture Run Now return and latest status
   prompt: |
-    Go ahead and do a deeper cleanup.
-  outcome: Removed empty unused directories (semantic_model/, src/)
-  next: None
+    Issue reproduced, please proceed.
+  outcome: Logged stored procedure return value and latest consistency run row
+  next: Re-run Run Now and inspect debug logs
 
-- timestamp: 2026-01-18 21:50
-  goal: Add version history
+- timestamp: 2026-01-19 05:15
+  goal: Avoid metadata lookup failure abort
   prompt: |
-    Create a VERSION_HISTORY.md that summarizes the changes to the application over time.
-  outcome: Added VERSION_HISTORY.md and documented major releases
-  next: None
+    Issue reproduced, please proceed.
+  outcome: Wrapped SHOW DYNAMIC TABLES + RESULT_SCAN in exception handler to allow metrics to continue
+  next: Re-run 21_consistency.sql and retry Run Now
+
+- timestamp: 2026-01-19 05:30
+  goal: Isolate metrics_insert failure
+  prompt: |
+    Issue reproduced, please proceed.
+  outcome: Added pre-insert row count debug steps for public/silver/gold
+  next: Re-run 21_consistency.sql and retry Run Now
+
+- timestamp: 2026-01-19 05:45
+  goal: Capture gold_rows query error
+  prompt: |
+    Issue reproduced, please proceed.
+  outcome: Added query history lookup to gold_rows error debug step
+  next: Re-run 21_consistency.sql and retry Run Now
+
+- timestamp: 2026-01-19 06:00
+  goal: Surface debug table rows in logs
+  prompt: |
+    Issue reproduced, please proceed.
+  outcome: Added app-side fetch of CONSISTENCY_CHECK_DEBUG for latest run
+  next: Re-run Run Now and inspect debug rows
+
+- timestamp: 2026-01-19 06:15
+  goal: Capture latest-status logging failure
+  prompt: |
+    Issue reproduced, please proceed.
+  outcome: Added error log when latest status/debug fetch fails
+  next: Re-run Run Now and inspect debug logs
+
+- timestamp: 2026-01-19 06:25
+  goal: Fix latest status log serialization
+  prompt: |
+    Issue reproduced, please proceed.
+  outcome: Used json.dumps(default=str) for latest status debug log
+  next: Re-run Run Now and inspect debug logs
+
+- timestamp: 2026-01-19 06:35
+  goal: Capture gold table schema
+  prompt: |
+    Issue reproduced, please proceed.
+  outcome: Added logging of GOLD.DISASTERS_BY_STATE column list when gold_rows fails
+  next: Re-run Run Now and inspect debug logs
+
+- timestamp: 2026-01-19 06:50
+  goal: Diagnose gold table column access
+  prompt: |
+    Issue reproduced, please proceed.
+  outcome: Added get_table_columns logging and SHOW COLUMNS fallback
+  next: Re-run Run Now and inspect debug logs
+
+- timestamp: 2026-01-19 07:05
+  goal: Diagnose gold_rows table access
+  prompt: |
+    Issue reproduced, please proceed.
+  outcome: Qualified analytics information_schema and added gold table existence debug step
+  next: Re-run 21_consistency.sql and retry Run Now
+
+- timestamp: 2026-01-19 07:20
+  goal: Capture metrics insert failure details
+  prompt: |
+    Issue reproduced, please proceed.
+  outcome: Wrapped metrics insert in exception handler and logged query error
+  next: Re-run 21_consistency.sql and retry Run Now
+
+- timestamp: 2026-01-19 07:35
+  goal: Capture metrics insert error message
+  prompt: |
+    Issue reproduced, please proceed.
+  outcome: Used SHOW QUERIES + RESULT_SCAN for error text
+  next: Re-run 21_consistency.sql and retry Run Now
+
+- timestamp: 2026-01-19 07:50
+  goal: Confirm metrics insert success marker
+  prompt: |
+    Issue reproduced, please proceed.
+  outcome: Added metrics_insert_ok debug marker after successful insert
+  next: Re-run 21_consistency.sql and retry Run Now
+
+- timestamp: 2026-01-19 08:05
+  goal: Simplify Consistency Checker UI
+  prompt: |
+    Execute. Add in a refresh button on the Consistency Checker.
+  outcome: Removed Run Now, added Refresh Results, showed next scheduled run time
+  next: Verify consistency results and task metadata
+
+- timestamp: 2026-01-19 08:20
+  goal: Remove Run Now debug scaffolding
+  prompt: |
+    Yes, remove the Run Now debug scaffolding from 21_consistency.sql
+  outcome: Removed debug table and debug blocks from consistency procedure
+  next: Re-run 21_consistency.sql to update monitoring objects
+
+- timestamp: 2026-01-19 08:30
+  goal: Drop debug table
+  prompt: |
+    Let's also drop the unnecessary consistency_check_debug table
+  outcome: Added DROP TABLE IF EXISTS for CONSISTENCY_CHECK_DEBUG in 21_consistency.sql
+  next: Re-run 21_consistency.sql
+
+- timestamp: 2026-01-19 08:45
+  goal: Remove leftover debug vars in SP
+  prompt: |
+    Execute.
+  outcome: Removed v_step/v_detail debug writes from SP exception block
+  next: Re-run 21_consistency.sql and retry procedure call
+
+- timestamp: 2026-01-19 09:10
+  goal: Capture SP error message in notes
+  prompt: |
+    Apply the change directly.
+  outcome: Added minimal error capture to SP_RUN_CONSISTENCY_CHECK notes
+  next: Re-run 21_consistency.sql and retry SP call
+
+- timestamp: 2026-01-19 09:35
+  goal: Add step name to SP error notes
+  prompt: |
+    It just says "Stored procedure failed" in the Notes column
+  outcome: Added step-name fallback in SP error notes
+  next: Re-run 21_consistency.sql and retry SP call
+
+- timestamp: 2026-01-19 09:55
+  goal: Use step name when error message unavailable
+  prompt: |
+    Apply directly.
+  outcome: Changed error fallback to use step name when error msg missing
+  next: Re-run 21_consistency.sql and retry SP call
+
+- timestamp: 2026-01-19 10:15
+  goal: Allow metadata lookup to fail gracefully
+  prompt: |
+    Apply directly
+  outcome: Wrapped dynamic table metadata lookup in exception handler
+  next: Re-run 21_consistency.sql and retry SP call
+
+- timestamp: 2026-01-19 10:45
+  goal: Run procedure as caller
+  prompt: |
+    Apply the changes to 21_consistency.sql directly
+  outcome: Set SP_RUN_CONSISTENCY_CHECK to EXECUTE AS CALLER
+  next: Re-run 21_consistency.sql and retry SP call
+
+- timestamp: 2026-01-19 11:05
+  goal: Fix SP variable binding errors
+  prompt: |
+    Here are the results: @/Users/bdeakin/Downloads/Untitled_2026-01-19-0046.tsv
+  outcome: Bound SP variables with colon and used last_refresh column
+  next: Re-run 21_consistency.sql and retry SP call
+
+- timestamp: 2026-01-19 11:20
+  goal: Finalize consistency checker release
+  prompt: |
+    Do both, clean up unnecessary code, and then commit this as the latest point release with notes about added functionality.
+  outcome: Removed Run Now helper, updated release notes for read-only consistency checker and caller execution
+  next: Commit release

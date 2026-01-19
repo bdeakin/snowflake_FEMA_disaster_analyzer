@@ -56,7 +56,13 @@ Note: OCSP errors were resolved by upgrading `snowflake-connector-python` to the
 6. Run pipeline SQL:
    - `sql/pipeline/10_silver.sql`
    - `sql/pipeline/20_gold.sql`
-7. Run the app:
+7. Run consistency checker setup:
+   - `sql/pipeline/21_consistency.sql`
+   - Resume the 12-hour task (first time only):
+     ```
+     ALTER TASK ANALYTICS.MONITORING.TASK_RUN_CONSISTENCY_CHECK_12H RESUME;
+     ```
+8. Run the app:
    ```
    streamlit run app/app.py
    ```
@@ -82,3 +88,9 @@ Note: OCSP errors were resolved by upgrading `snowflake-connector-python` to the
 - `ANALYTICS.GOLD.CUBES_BY_STATE_TYPE_YEAR`
 - `ANALYTICS.GOLD.CUBES_BY_STATE_TYPE_MONTH`
 - `ANALYTICS.GOLD.CUBES_BY_STATE_TYPE_WEEK`
+- `ANALYTICS.MONITORING.CONSISTENCY_CHECK_RUNS`
+
+## Consistency Checker
+The Consistency Checker tab surfaces 12-hour task runs that compare Public↔Silver and
+Gold↔Silver/Public metrics using a results table populated by Snowflake Tasks. Use “Run Now”
+to execute a manual check for a selected window (task schedule remains every 12 hours).

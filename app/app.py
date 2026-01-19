@@ -29,11 +29,15 @@ def _load_module(module_name: str, file_name: str):
 try:
     from queries import (
         get_bump_drilldown_state_summary,
+        get_consistency_runs,
         get_cube_summary,
         get_distinct_disaster_types,
         get_drilldown,
+        get_dynamic_table_metadata,
         get_state_choropleth,
         get_sunburst_rows,
+        get_task_history,
+        get_task_status,
         get_trends_bump_ranks,
     )
     from llm import (
@@ -56,11 +60,15 @@ except ImportError:
     llm = _load_module("app_llm", "llm.py")
     viz = _load_module("app_viz", "viz.py")
     get_bump_drilldown_state_summary = queries.get_bump_drilldown_state_summary
+    get_consistency_runs = queries.get_consistency_runs
     get_cube_summary = queries.get_cube_summary
     get_distinct_disaster_types = queries.get_distinct_disaster_types
     get_drilldown = queries.get_drilldown
+    get_dynamic_table_metadata = queries.get_dynamic_table_metadata
     get_state_choropleth = queries.get_state_choropleth
     get_sunburst_rows = queries.get_sunburst_rows
+    get_task_history = queries.get_task_history
+    get_task_status = queries.get_task_status
     get_trends_bump_ranks = queries.get_trends_bump_ranks
     summarize_bump_entry = llm.summarize_bump_entry
     group_declaration_names = llm.group_declaration_names
@@ -84,7 +92,7 @@ type_options = type_result.df["disaster_type"].dropna().tolist()
 
 active_tab = st.radio(
     "View",
-    ["Explore", "Disaster Type Trends", "Sunburst"],
+    ["Explore", "Disaster Type Trends", "Sunburst", "Consistency Checker"],
     horizontal=True,
     key="active_tab",
 )
@@ -699,4 +707,133 @@ elif active_tab == "Sunburst":
                     st.write(cache[cache_key])
             else:
                 st.caption("Select a year or named event to see a summary.")
+
+elif active_tab == "Consistency Checker":
+    with st.sidebar:
+        st.subheader("Consistency Checker Filters")
+        default_end = dt.date.today()
+        default_start = default_end - dt.timedelta(days=30)
+        window_start = st.date_input(
+            "Results window start",
+            value=default_start,
+            key="filters_consistency_window_start",
+        )
+        window_end = st.date_input(
+            "Results window end",
+            value=default_end,
+            key="filters_consistency_window_end",
+        )
+        if window_start > window_end:
+            st.error("Window start must be before window end.")
+            st.stop()
+        status_filter = st.multiselect(
+            "Run status",
+            options=["IN_SYNC", "STALE_OK", "OUT_OF_SYNC", "ERROR"],
+            default=["IN_SYNC", "STALE_OK"],
+            key="filters_consistency_status",
+        )
+        max_rows = st.slider(
+            "Max rows",
+            min_value=10,
+            max_value=200,
+            value=50,
+            step=10,
+            key="filters_consistency_limit",
+        )
+    st.subheader("Snowflake Tasks Enabled")
+    task_names = [
+        "ANALYTICS.MONITORING.TASK_RUN_CONSISTENCY_CHECK_12H",
+    ]
+    task_status = get_task_status(task_names).df
+    if task_status.empty:
+        st.info("Task metadata not available.")
+    else:
+        st.dataframe(task_status, use_container_width=True)
+        if "next_scheduled_time" in task_status.columns:
+            next_run = task_status["next_scheduled_time"].dropna()
+            if not next_run.empty:
+                st.caption(f"Next scheduled run: {next_run.iloc[0]}")
+        with st.expander("Task history (last 5 runs)"):
+            history_df = get_task_history(task_names, limit_rows=5).df
+            st.dataframe(history_df, use_container_width=True)
+
+    st.subheader("Dynamic Tables")
+    dt_names = [
+        "ANALYTICS.SILVER.FCT_DISASTERS",
+        "ANALYTICS.GOLD.DISASTERS_BY_STATE",
+    ]
+    dt_meta = get_dynamic_table_metadata(dt_names).df
+    dt_help = {}
+    for row in dt_meta.itertuples(index=False):
+        schema_name = getattr(row, "schema_name", None) or getattr(row, "table_schema", None)
+        table_name = getattr(row, "name", None) or getattr(row, "table_name", None)
+        if not schema_name or not table_name:
+            continue
+        key = f"{schema_name}.{table_name}"
+        target_lag = getattr(row, "target_lag", None)
+        warehouse = getattr(row, "warehouse", None)
+        refresh_mode = getattr(row, "refresh_mode", None)
+        last_refresh = getattr(row, "last_refresh", None) or getattr(row, "last_refresh_time", None)
+        dt_help[key] = (
+            f"Target lag: {target_lag}\n"
+            f"Warehouse: {warehouse}\n"
+            f"Refresh mode: {refresh_mode}\n"
+            f"Last refresh: {last_refresh}"
+        )
+    col1, col2 = st.columns(2)
+    with col1:
+        st.metric(
+            label="SILVER Dynamic Table",
+            value="ANALYTICS.SILVER.FCT_DISASTERS",
+            help=dt_help.get("SILVER.FCT_DISASTERS", "Metadata unavailable"),
+        )
+    with col2:
+        st.metric(
+            label="GOLD Dynamic Table",
+            value="ANALYTICS.GOLD.DISASTERS_BY_STATE",
+            help=dt_help.get("GOLD.DISASTERS_BY_STATE", "Metadata unavailable"),
+        )
+
+    st.subheader("Consistency Results")
+    if st.button("Refresh Results"):
+        st.rerun()
+    results = get_consistency_runs(
+        window_start.isoformat(),
+        window_end.isoformat(),
+        status_filter or None,
+        limit_rows=max_rows,
+    ).df
+    if results.empty:
+        st.info("No consistency runs found for the selected filters.")
+    else:
+        display_cols = [
+            "run_ts",
+            "window_start_date",
+            "window_end_date",
+            "public_row_count",
+            "public_distinct_id_count",
+            "public_min_start_date",
+            "public_max_start_date",
+            "public_id_signature",
+            "silver_row_count",
+            "silver_distinct_id_count",
+            "silver_min_start_date",
+            "silver_max_start_date",
+            "silver_id_signature",
+            "silver_last_refresh_ts",
+            "silver_target_lag",
+            "gold_total_count",
+            "gold_dim_row_count",
+            "gold_last_refresh_ts",
+            "gold_target_lag",
+            "silver_vs_public_status",
+            "silver_vs_public_reason",
+            "gold_vs_silver_status",
+            "gold_vs_silver_reason",
+            "gold_vs_public_status",
+            "gold_vs_public_reason",
+            "notes",
+        ]
+        existing_cols = [col for col in display_cols if col in results.columns]
+        st.dataframe(results[existing_cols], use_container_width=True)
 
