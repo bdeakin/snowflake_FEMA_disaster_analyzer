@@ -127,8 +127,10 @@ def group_declaration_names(
 
 def group_sankey_names(
     records: List[Dict[str, str]],
+    gnews_headlines: Optional[List[str]] = None,
     timeout_s: int = 40,
     chunk_size: int = 50,
+    progress_callback: Optional[callable] = None,
 ) -> List[Dict[str, object]]:
     api_key = (os.getenv("OPENAI_API_KEY") or "").strip().strip("\"'").strip()
     if not api_key:
@@ -139,13 +141,19 @@ def group_sankey_names(
     if not cleaned:
         return []
 
+    headlines_text = (
+        "\n".join(f"- {title}" for title in (gnews_headlines or [])[:8]) or "None"
+    )
     system_prompt = (
-        "You classify FEMA disaster records by whether they are named events and return "
-        "a JSON list of objects. Use the provided record_id. If the name is not clearly "
-        "a named event, set is_named_event=false, canonical_event_name=null, and "
-        "name_group=\"Unnamed (<Type>)\" where <Type> is the disaster_type. "
-        "If named, set canonical_event_name to the best known name and name_group to a "
-        "concise label such as \"Hurricane Katrina\". Do not invent names."
+        "You classify FEMA disaster records and return a JSON list of objects. "
+        "For each record, assign a broad theme for the given year (theme_group), and "
+        "also determine whether the record refers to a named event (name_group). "
+        "Use the provided record_id. If the name is not clearly a named event, set "
+        "is_named_event=false, canonical_event_name=null, and name_group=\"Unnamed\". "
+        "Use the provided news headlines as hints for theme names when relevant. "
+        "Theme examples: \"2024 Atlantic Hurricane Season\", "
+        "\"Atmospheric River Flooding\", \"Midwest Tornado Outbreak\". "
+        "Do not invent specifics beyond the input."
     )
 
     headers = {"Authorization": f"Bearer {api_key}", "Content-Type": "application/json"}
@@ -155,6 +163,7 @@ def group_sankey_names(
         payload_records = [
             {
                 "record_id": r.get("record_id"),
+                "year": r.get("year"),
                 "disaster_type": r.get("disaster_type", ""),
                 "declaration_name": r.get("declaration_name", ""),
             }
@@ -162,9 +171,12 @@ def group_sankey_names(
         ]
         user_prompt = (
             "Return a strict JSON list of objects with keys: record_id, "
+            "theme_group (string), theme_confidence (0-1), "
             "is_named_event (boolean), canonical_event_name (string or null), "
             "name_group (string), confidence (0-1). Input records:\n"
             + json.dumps(payload_records, ensure_ascii=True)
+            + "\nNews headlines (hints, may be empty):\n"
+            + headlines_text
         )
         payload = {
             "model": model,
@@ -174,11 +186,18 @@ def group_sankey_names(
                 {"role": "user", "content": user_prompt},
             ],
         }
-        resp = requests.post(OPENAI_URL, json=payload, headers=headers, timeout=timeout_s)
-        resp.raise_for_status()
-        data = resp.json()
-        content = data["choices"][0]["message"]["content"].strip()
-        results.extend(_extract_json_list(content))
+        try:
+            resp = requests.post(
+                OPENAI_URL, json=payload, headers=headers, timeout=timeout_s
+            )
+            resp.raise_for_status()
+            data = resp.json()
+            content = data["choices"][0]["message"]["content"].strip()
+            results.extend(_extract_json_list(content))
+            if progress_callback:
+                progress_callback(len(chunk))
+        except (requests.exceptions.ReadTimeout, requests.exceptions.ConnectionError):
+            break
     return results
 
 

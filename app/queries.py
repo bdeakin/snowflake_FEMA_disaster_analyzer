@@ -2,6 +2,8 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 from typing import Any, Dict, Optional
+import json
+from datetime import datetime, timedelta
 
 import pandas as pd
 
@@ -127,6 +129,8 @@ def get_name_grouping_cache(record_ids: list[str]) -> QueryResult:
           is_named_event AS is_named_event,
           canonical_event_name AS canonical_event_name,
           name_group AS name_group,
+          theme_group AS theme_group,
+          theme_confidence AS theme_confidence,
           confidence AS confidence,
           llm_model AS llm_model,
           created_at AS created_at,
@@ -135,6 +139,93 @@ def get_name_grouping_cache(record_ids: list[str]) -> QueryResult:
         WHERE record_id IN ({", ".join(placeholders)})
     """
     return fetch_df(sql, params)
+
+
+def get_gnews_cache(
+    year: int,
+    disaster_type: str,
+    query_hash: str,
+    ttl_days: int = 7,
+) -> QueryResult:
+    sql = """
+        SELECT
+          year AS year,
+          disaster_type AS disaster_type,
+          query_hash AS query_hash,
+          query AS query,
+          titles AS titles,
+          urls AS urls,
+          fetched_at AS fetched_at
+        FROM ANALYTICS.MONITORING.GNEWS_THEME_CACHE
+        WHERE year = %(year)s
+          AND disaster_type = %(disaster_type)s
+          AND query_hash = %(query_hash)s
+          AND fetched_at >= %(min_fetched)s
+        QUALIFY ROW_NUMBER() OVER (ORDER BY fetched_at DESC) = 1
+    """
+    min_fetched = datetime.utcnow() - timedelta(days=ttl_days)
+    return fetch_df(
+        sql,
+        {
+            "year": year,
+            "disaster_type": disaster_type,
+            "query_hash": query_hash,
+            "min_fetched": min_fetched,
+        },
+    )
+
+
+def upsert_gnews_cache(
+    year: int,
+    disaster_type: str,
+    query_hash: str,
+    query: str,
+    titles: list[str],
+    urls: list[str],
+) -> None:
+    sql = """
+        MERGE INTO ANALYTICS.MONITORING.GNEWS_THEME_CACHE AS target
+        USING (
+            SELECT
+              %(year)s AS year,
+              %(disaster_type)s AS disaster_type,
+              %(query_hash)s AS query_hash,
+              %(query)s AS query,
+              PARSE_JSON(%(titles)s) AS titles,
+              PARSE_JSON(%(urls)s) AS urls
+        ) AS source
+        ON target.year = source.year
+           AND target.disaster_type = source.disaster_type
+           AND target.query_hash = source.query_hash
+        WHEN MATCHED THEN
+          UPDATE SET
+            query = source.query,
+            titles = source.titles,
+            urls = source.urls,
+            fetched_at = CURRENT_TIMESTAMP()
+        WHEN NOT MATCHED THEN
+          INSERT (year, disaster_type, query_hash, query, titles, urls, fetched_at)
+          VALUES (
+            source.year,
+            source.disaster_type,
+            source.query_hash,
+            source.query,
+            source.titles,
+            source.urls,
+            CURRENT_TIMESTAMP()
+          )
+    """
+    execute_sql(
+        sql,
+        {
+            "year": year,
+            "disaster_type": disaster_type,
+            "query_hash": query_hash,
+            "query": query,
+            "titles": json.dumps(titles, ensure_ascii=True),
+            "urls": json.dumps(urls, ensure_ascii=True),
+        },
+    )
 
 
 def upsert_name_grouping_cache(
@@ -150,6 +241,8 @@ def upsert_name_grouping_cache(
         "is_named_event",
         "canonical_event_name",
         "name_group",
+        "theme_group",
+        "theme_confidence",
         "confidence",
         "llm_model",
     ]
@@ -174,8 +267,10 @@ def upsert_name_grouping_cache(
                   column3 AS is_named_event,
                   column4 AS canonical_event_name,
                   column5 AS name_group,
-                  column6 AS confidence,
-                  column7 AS llm_model
+                  column6 AS theme_group,
+                  column7 AS theme_confidence,
+                  column8 AS confidence,
+                  column9 AS llm_model
                 FROM VALUES {", ".join(values_sql)}
             ) AS source
             ON target.record_id = source.record_id
@@ -185,6 +280,8 @@ def upsert_name_grouping_cache(
                 is_named_event = source.is_named_event,
                 canonical_event_name = source.canonical_event_name,
                 name_group = source.name_group,
+                theme_group = source.theme_group,
+                theme_confidence = source.theme_confidence,
                 confidence = source.confidence,
                 llm_model = source.llm_model,
                 updated_at = CURRENT_TIMESTAMP()
@@ -195,6 +292,8 @@ def upsert_name_grouping_cache(
                 is_named_event,
                 canonical_event_name,
                 name_group,
+                theme_group,
+                theme_confidence,
                 confidence,
                 llm_model,
                 created_at,
@@ -206,6 +305,8 @@ def upsert_name_grouping_cache(
                 source.is_named_event,
                 source.canonical_event_name,
                 source.name_group,
+                source.theme_group,
+                source.theme_confidence,
                 source.confidence,
                 source.llm_model,
                 CURRENT_TIMESTAMP(),

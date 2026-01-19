@@ -44,6 +44,10 @@ the way. Counts are approximate, based on the project prompt history.
 - Goal: Ensure small-count disasters are visible and drilldown respects filters.
 - Outputs: Log-scaled cube bubbles and filter-driven drilldown resets.
 
+### 9) GNews-Assisted Themes + Prewarm
+- Goal: Improve Sankey themes with news hints and enable cache pre-warming.
+- Outputs: GNews cache table, GNews-assisted theme prompts, and a warm-cache script.
+
 ## Bug-Fix Narrative (By Category)
 
 ### Visualization Interaction / Mapping (≈8–10)

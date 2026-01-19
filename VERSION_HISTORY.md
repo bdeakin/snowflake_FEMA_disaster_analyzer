@@ -3,6 +3,11 @@
 This file summarizes notable changes to the FEMA Disasters Explorer over time. It is
 intended as a high-level narrative; see `git log` for exhaustive details.
 
+## v1.10
+- Sankey themes can be informed by cached GNews headlines.
+- Added GNews cache table and pre-warm script for Sankey grouping.
+- Sankey now uses single-year filtering with theme-first flow.
+
 ## v1.9
 - Explore cube chart now uses log-scaled bubble sizes for small counts.
 - Explore drilldown resets on filter changes to keep results in sync.

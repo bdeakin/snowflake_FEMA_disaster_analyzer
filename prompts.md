@@ -735,3 +735,10 @@ Format:
     On the Explore Tab under Disaster Summary, some Disaster Types have such a small number...
   outcome: Log-scaled cube bubbles, drilldown resets on filter changes, Sankey multi-select defaults
   next: Commit point release
+
+- timestamp: 2026-01-19 14:05
+  goal: GNews-assisted themes + cache prewarm
+  prompt: |
+    Enhance the thematic grouping for the Sankey tab by using GNews...
+  outcome: Added GNews cache table, GNews-assisted theme hints, and warm_sankey_cache.py
+  next: Commit point release

@@ -15,6 +15,7 @@ Sankey, and Sunburst tabs, each with its own independent sidebar filters.
 - **Streamlit App**: `app/app.py` drives UI and calls query helpers to render Plotly charts.
 - **LLM Summary**: Optional OpenAI summary for bump chart drilldown selections.
 - **Sankey Cache**: LLM name grouping cache stored in `ANALYTICS.MONITORING`.
+- **GNews Cache**: Optional GNews theme hints cached in `ANALYTICS.MONITORING`.
 
 ## Data & UI Flow
 \n```mermaid
@@ -50,3 +51,4 @@ flowchart LR
 - Consistency Checker failure notes record the last query error message or step name.
 - Development narrative is tracked in `DEVELOPMENT_NARRATIVE.md`.
 - Sankey uses a cached LLM grouping of declaration names per disaster record.
+- Sankey theme grouping can optionally use GNews headlines as hints.

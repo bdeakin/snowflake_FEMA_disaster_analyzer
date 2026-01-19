@@ -2,6 +2,7 @@ import datetime as dt
 import hashlib
 import os
 import importlib.util
+import time
 from pathlib import Path
 import sys
 from typing import List, Optional
@@ -57,6 +58,7 @@ try:
         get_distinct_disaster_types,
         get_drilldown,
         get_dynamic_table_metadata,
+        get_gnews_cache,
         get_name_grouping_cache,
         get_sankey_rows,
         get_state_choropleth,
@@ -64,6 +66,7 @@ try:
         get_task_history,
         get_task_status,
         get_trends_bump_ranks,
+        upsert_gnews_cache,
         upsert_name_grouping_cache,
     )
     from llm import (
@@ -95,6 +98,7 @@ except ImportError:
     get_distinct_disaster_types = queries.get_distinct_disaster_types
     get_drilldown = queries.get_drilldown
     get_dynamic_table_metadata = queries.get_dynamic_table_metadata
+    get_gnews_cache = queries.get_gnews_cache
     get_name_grouping_cache = queries.get_name_grouping_cache
     get_sankey_rows = queries.get_sankey_rows
     get_state_choropleth = queries.get_state_choropleth
@@ -102,6 +106,7 @@ except ImportError:
     get_task_history = queries.get_task_history
     get_task_status = queries.get_task_status
     get_trends_bump_ranks = queries.get_trends_bump_ranks
+    upsert_gnews_cache = queries.upsert_gnews_cache
     upsert_name_grouping_cache = queries.upsert_name_grouping_cache
     summarize_bump_entry = llm.summarize_bump_entry
     group_declaration_names = llm.group_declaration_names
@@ -147,6 +152,10 @@ def _year_range_to_dates(year_range: tuple[int, int]) -> tuple[dt.date, dt.date]
     start_date = dt.date(start_year, 1, 1)
     end_date = dt.date(end_year + 1, 1, 1)
     return start_date, end_date
+
+
+def _hash_query(value: str) -> str:
+    return hashlib.sha256(value.encode("utf-8")).hexdigest()
 
 
 def _format_year_columns(df: pd.DataFrame) -> pd.DataFrame:
@@ -432,12 +441,32 @@ elif active_tab == "Sankey":
     with st.sidebar:
         st.subheader("Sankey Filters")
         _render_data_range_note()
-        sankey_years = st.slider(
-            "Year range",
-            min_value=2000,
-            max_value=2025,
-            value=(2023, 2025),
-            key="filters_sankey_year_range",
+        min_year = 2000
+        max_year = dt.date.today().year
+        if min_available_date is not None:
+            min_year = pd.to_datetime(min_available_date).year
+        if max_available_date is not None:
+            max_year = pd.to_datetime(max_available_date).year
+        year_options = list(range(min_year, max_year + 1))
+        default_year = min(max_year, 2025) if 2025 in year_options else max_year
+        year_text = st.text_input(
+            "Jump to year",
+            value=str(default_year),
+            key="filters_sankey_year_text",
+        )
+        try:
+            parsed_year = int(year_text.strip())
+        except ValueError:
+            parsed_year = None
+        if parsed_year in year_options:
+            selected_index = year_options.index(parsed_year)
+        else:
+            selected_index = year_options.index(default_year)
+        sankey_year = st.selectbox(
+            "Year",
+            options=year_options,
+            index=selected_index,
+            key="filters_sankey_year",
         )
         default_sankey = {"Hurricane", "Tropical Storm", "Volcanic Eruption"}
         sankey_types = []
@@ -452,10 +481,17 @@ elif active_tab == "Sankey":
         if not sankey_types:
             sankey_types = None
 
+        gnews_enabled = st.checkbox(
+            "Use GNews for theme hints",
+            value=True,
+            key="filters_sankey_gnews_enabled",
+        )
+
     if not sankey_types:
         st.info("No disaster types available to render the Sankey view.")
     else:
-        sankey_start, sankey_end = _year_range_to_dates(sankey_years)
+        sankey_start = dt.date(sankey_year, 1, 1)
+        sankey_end = dt.date(sankey_year + 1, 1, 1)
         sankey_result = get_sankey_rows(
             sankey_start.isoformat(),
             sankey_end.isoformat(),
@@ -485,6 +521,8 @@ elif active_tab == "Sankey":
                         "record_id",
                         "cache_source_text_hash",
                         "cache_name_group",
+                        "cache_theme_group",
+                        "cache_theme_confidence",
                         "cache_is_named_event",
                         "cache_canonical_event_name",
                         "cache_confidence",
@@ -496,6 +534,8 @@ elif active_tab == "Sankey":
                     columns={
                         "source_text_hash": "cache_source_text_hash",
                         "name_group": "cache_name_group",
+                        "theme_group": "cache_theme_group",
+                        "theme_confidence": "cache_theme_confidence",
                         "is_named_event": "cache_is_named_event",
                         "canonical_event_name": "cache_canonical_event_name",
                         "confidence": "cache_confidence",
@@ -507,7 +547,10 @@ elif active_tab == "Sankey":
                 df["cache_source_text_hash"] != df["source_text_hash"]
             )
             missing_records = (
-                df.loc[needs_enrich, ["record_id", "disaster_type", "declaration_name", "source_text_hash"]]
+                df.loc[
+                    needs_enrich,
+                    ["record_id", "year", "disaster_type", "declaration_name", "source_text_hash"],
+                ]
                 .drop_duplicates(subset=["record_id"])
                 .reset_index(drop=True)
             )
@@ -525,27 +568,123 @@ elif active_tab == "Sankey":
                 llm_disabled = st.session_state.get("sankey_llm_disabled", False)
                 if not os.getenv("OPENAI_API_KEY"):
                     st.warning(
-                        "OPENAI_API_KEY is not set. Using fallback 'Unnamed (<Type>)' labels "
+                        "OPENAI_API_KEY is not set. Using fallback 'Unnamed' labels "
                         "for uncached records."
                     )
                 elif llm_disabled:
                     st.info(
                         "OpenAI name grouping is disabled due to a prior authentication error. "
-                        "Using fallback 'Unnamed (<Type>)' labels for uncached records."
+                        "Using fallback 'Unnamed' labels for uncached records."
                     )
                 else:
+                    gnews_headlines: list[str] = []
+                    if gnews_enabled:
+                        gnews_key = os.getenv("GNEWS_API_KEY")
+                        if gnews_key and sankey_types:
+                            year_value = int(sankey_year)
+                            type_label = " OR ".join(sorted(sankey_types))
+                            query_text = f"{year_value} {type_label} disaster"
+                            query_hash = _hash_query(query_text.lower())
+                            cached = get_gnews_cache(
+                                year=year_value,
+                                disaster_type=type_label,
+                                query_hash=query_hash,
+                            ).df
+                            if not cached.empty:
+                                cached_titles = cached.iloc[0].get("titles")
+                                if isinstance(cached_titles, list):
+                                    gnews_headlines = cached_titles
+                            if not gnews_headlines:
+                                try:
+                                    resp = requests.get(
+                                        "https://gnews.io/api/v4/search",
+                                        params={
+                                            "q": query_text,
+                                            "token": gnews_key,
+                                            "lang": "en",
+                                            "max": 8,
+                                        },
+                                        timeout=12,
+                                    )
+                                    resp.raise_for_status()
+                                    payload = resp.json()
+                                    articles = payload.get("articles", [])
+                                    gnews_headlines = [
+                                        a.get("title", "").strip()
+                                        for a in articles
+                                        if a.get("title")
+                                    ]
+                                    urls = [
+                                        a.get("url", "").strip()
+                                        for a in articles
+                                        if a.get("url")
+                                    ]
+                                    if gnews_headlines:
+                                        upsert_gnews_cache(
+                                            year=year_value,
+                                            disaster_type=type_label,
+                                            query_hash=query_hash,
+                                            query=query_text,
+                                            titles=gnews_headlines,
+                                            urls=urls,
+                                        )
+                                except Exception:
+                                    gnews_headlines = []
+                    total_records = int(missing_records.shape[0])
+                    chunk_size = 25
+                    total_batches = max((total_records + chunk_size - 1) // chunk_size, 1)
+                    progress_state = {"completed_batches": 0, "processed_records": 0}
+                    progress_bar = st.progress(0)
+                    status_text = st.caption(
+                        f"LLM grouping: 0/{total_batches} batches completed (0/{total_records} records)."
+                    )
+                    started_at = time.monotonic()
+
+                    def _format_eta(seconds: float) -> str:
+                        seconds = max(seconds, 0.0)
+                        minutes = int(seconds // 60)
+                        secs = int(seconds % 60)
+                        return f"{minutes}m {secs:02d}s"
+
+                    def _update_progress(processed: int) -> None:
+                        progress_state["completed_batches"] += 1
+                        progress_state["processed_records"] += processed
+                        completed_batches = progress_state["completed_batches"]
+                        processed_records = progress_state["processed_records"]
+                        progress = min(completed_batches / total_batches, 1.0)
+                        progress_bar.progress(progress)
+                        elapsed = time.monotonic() - started_at
+                        avg_per_batch = elapsed / completed_batches if completed_batches else 0
+                        remaining_batches = max(total_batches - completed_batches, 0)
+                        eta_text = _format_eta(avg_per_batch * remaining_batches)
+                        status_text.caption(
+                            "LLM grouping: "
+                            f"{completed_batches}/{total_batches} batches completed "
+                            f"({processed_records}/{total_records} records). "
+                            f"ETA {eta_text}."
+                        )
+
                     with st.spinner("Grouping event names with OpenAI..."):
                         try:
                             llm_rows = group_sankey_names(
-                                missing_records[["record_id", "disaster_type", "declaration_name"]].to_dict(
-                                    "records"
-                                )
+                                missing_records[
+                                    ["record_id", "year", "disaster_type", "declaration_name"]
+                                ].to_dict("records"),
+                                gnews_headlines=gnews_headlines,
+                                timeout_s=60,
+                                chunk_size=chunk_size,
+                                progress_callback=_update_progress,
                             )
+                            if len(llm_rows) < len(missing_records):
+                                st.warning(
+                                    "OpenAI name grouping returned partial results (timeout or connection issue). "
+                                    "Using fallback 'Unnamed' labels for remaining records."
+                                )
                         except Exception as exc:
                             if "401" in str(exc):
                                 st.session_state["sankey_llm_disabled"] = True
                             st.warning(
-                                "OpenAI name grouping failed. Using fallback 'Unnamed (<Type>)' labels "
+                                "OpenAI name grouping failed. Using fallback 'Unnamed' labels "
                                 f"for uncached records. Error: {exc}"
                             )
                 if llm_rows:
@@ -561,10 +700,21 @@ elif active_tab == "Sankey":
                     upsert_name_grouping_cache(llm_rows)
 
                     llm_df = pd.DataFrame(llm_rows).rename(
-                        columns={"name_group": "llm_name_group"}
+                        columns={
+                            "name_group": "llm_name_group",
+                            "theme_group": "llm_theme_group",
+                            "theme_confidence": "llm_theme_confidence",
+                        }
                     )
                     df = df.merge(
-                        llm_df[["record_id", "llm_name_group"]],
+                        llm_df[
+                            [
+                                "record_id",
+                                "llm_name_group",
+                                "llm_theme_group",
+                                "llm_theme_confidence",
+                            ]
+                        ],
                         on="record_id",
                         how="left",
                     )
@@ -590,15 +740,19 @@ elif active_tab == "Sankey":
                 df["name_group"] = df["name_group"].combine_first(df["llm_name_group"])
             missing_name = df["name_group"].isna() | (df["name_group"].astype(str).str.strip() == "")
             if missing_name.any():
-                df.loc[missing_name, "name_group"] = df.loc[missing_name, "disaster_type"].map(
-                    lambda dtype: f"Unnamed ({dtype})"
-                )
+                df.loc[missing_name, "name_group"] = "Unnamed"
 
-            year_counts = (
-                df.groupby(["year", "disaster_type"])["record_id"].nunique().reset_index(name="value")
-            )
-            type_counts = (
-                df.groupby(["disaster_type", "name_group"])["record_id"].nunique().reset_index(name="value")
+            df["theme_group"] = df["cache_theme_group"]
+            if "llm_theme_group" in df.columns:
+                df["theme_group"] = df["theme_group"].combine_first(df["llm_theme_group"])
+            missing_theme = df["theme_group"].isna() | (df["theme_group"].astype(str).str.strip() == "")
+            if missing_theme.any():
+                df.loc[missing_theme, "theme_group"] = "Other"
+
+            st.caption("Flow: Theme → Event → State")
+
+            theme_counts = (
+                df.groupby(["theme_group", "name_group"])["record_id"].nunique().reset_index(name="value")
             )
             state_counts = (
                 df.groupby(["name_group", "state"])["record_id"].nunique().reset_index(name="value")
@@ -614,29 +768,18 @@ elif active_tab == "Sankey":
                     nodes.append({"id": node_id, "name": label})
                 return node_id
 
-            for row in year_counts.itertuples(index=False):
-                _add_node("Y", str(row.year))
-                _add_node("T", str(row.disaster_type))
-            for row in type_counts.itertuples(index=False):
-                _add_node("T", str(row.disaster_type))
+            for row in theme_counts.itertuples(index=False):
+                _add_node("TH", str(row.theme_group))
                 _add_node("N", str(row.name_group))
             for row in state_counts.itertuples(index=False):
                 _add_node("N", str(row.name_group))
                 _add_node("S", str(row.state))
 
             links = []
-            for row in year_counts.itertuples(index=False):
+            for row in theme_counts.itertuples(index=False):
                 links.append(
                     {
-                        "source": f"Y:{row.year}",
-                        "target": f"T:{row.disaster_type}",
-                        "value": int(row.value),
-                    }
-                )
-            for row in type_counts.itertuples(index=False):
-                links.append(
-                    {
-                        "source": f"T:{row.disaster_type}",
+                        "source": f"TH:{row.theme_group}",
                         "target": f"N:{row.name_group}",
                         "value": int(row.value),
                     }
