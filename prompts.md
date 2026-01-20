@@ -749,3 +749,10 @@ Format:
     Default the Annual Disaster Themes filter to Fire only.
   outcome: Default selection now sets Fire and deselects other types.
   next: Verify initial filter state in the app.
+
+- timestamp: 2026-01-20 00:25
+  goal: Update Annual Disaster Themes defaults
+  prompt: |
+    Default Annual Disaster Themes to Year 2024 and select Fire, Flood, Hurricane.
+  outcome: Default year set to 2024 and type selection updated to Fire/Flood/Hurricane.
+  next: Verify initial filter state in the app.

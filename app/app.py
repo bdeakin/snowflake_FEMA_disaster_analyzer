@@ -1073,14 +1073,14 @@ with tabs[3]:
         if max_available_date is not None:
             max_year = pd.to_datetime(max_available_date).year
         year_options = list(range(min_year, max_year + 1))
-        default_year = min(max_year, 2025) if 2025 in year_options else max_year
+        default_year = 2024 if 2024 in year_options else max_year
         sankey_year = st.selectbox(
             "Year",
             options=year_options,
             index=year_options.index(default_year),
             key="filters_sankey_year",
         )
-        default_sankey = {"Fire"}
+        default_sankey = {"Fire", "Flood", "Hurricane"}
         for dtype in type_options:
             key = f"filters_sankey_type_{dtype}"
             if key not in st.session_state:
