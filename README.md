@@ -1,6 +1,6 @@
 # FEMA Disasters Explorer
 
-Streamlit app that visualizes FEMA disaster data from Snowflake Public Data using a choropleth overview, cube summaries, and county-centroid drilldowns.
+Streamlit app that visualizes FEMA disaster data from Snowflake Public Data using a choropleth overview, cube summaries, county-centroid drilldowns, and an About tab with narrative/architecture details.
 
 For the core architecture and data flow diagram, see `ARCHITECTURE.md`.
 
@@ -64,9 +64,7 @@ Note: OCSP errors were resolved by upgrading `snowflake-connector-python` to the
      ```
 8. Run Sankey cache setup:
    - `sql/pipeline/22_sankey_cache.sql`
-9. Run GNews cache setup:
-   - `sql/pipeline/24_gnews_cache.sql`
-10. Run the app:
+9. Run the app:
    ```
    streamlit run app/app.py
    ```
@@ -100,7 +98,6 @@ python scripts/warm_sankey_cache.py
 - `ANALYTICS.GOLD.CUBES_BY_STATE_TYPE_WEEK`
 - `ANALYTICS.MONITORING.CONSISTENCY_CHECK_RUNS`
 - `ANALYTICS.MONITORING.DISASTER_NAME_GROUPING_CACHE`
-- `ANALYTICS.MONITORING.GNEWS_THEME_CACHE`
 
 ## Consistency Checker
 The Consistency Checker tab surfaces 12-hour task runs that compare Public↔Silver and
@@ -112,6 +109,21 @@ The Sankey tab uses an LLM to group declaration names into named vs unnamed even
 results are cached in `ANALYTICS.MONITORING.DISASTER_NAME_GROUPING_CACHE` to avoid repeated
 LLM calls for the same records.
 
-## GNews Theme Cache
-The Sankey tab optionally uses GNews headlines to inform theme naming. Results are cached
-in `ANALYTICS.MONITORING.GNEWS_THEME_CACHE`. Set `GNEWS_API_KEY` to enable lookups.
+To clear the cache, run one of the following in Snowflake:
+```
+TRUNCATE TABLE ANALYTICS.MONITORING.DISASTER_NAME_GROUPING_CACHE;
+```
+Or, to clear only theme/name fields while preserving record IDs and hashes:
+```
+UPDATE ANALYTICS.MONITORING.DISASTER_NAME_GROUPING_CACHE
+SET
+  name_group = NULL,
+  theme_group = NULL,
+  theme_confidence = NULL,
+  is_named_event = NULL,
+  canonical_event_name = NULL,
+  confidence = NULL,
+  llm_model = NULL,
+  updated_at = CURRENT_TIMESTAMP();
+```
+

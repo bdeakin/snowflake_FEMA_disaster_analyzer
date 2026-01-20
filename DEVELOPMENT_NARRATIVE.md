@@ -18,7 +18,7 @@ the way. Counts are approximate, based on the project prompt history.
 ### 3) Sunburst Plan (Replacement)
 - Goal: Asymmetric Sunburst: incident type -> year -> named event -> state.
 - Outputs: LLM grouping and summaries, drilldown re-rooting, reset control, inline
-  narrative panel, and event/state news summaries (GNews).
+  narrative panel.
 
 ### 4) Named Storms Plan
 - Goal: Include named Tropical Storms alongside Hurricanes.
@@ -44,9 +44,6 @@ the way. Counts are approximate, based on the project prompt history.
 - Goal: Ensure small-count disasters are visible and drilldown respects filters.
 - Outputs: Log-scaled cube bubbles and filter-driven drilldown resets.
 
-### 9) GNews-Assisted Themes + Prewarm
-- Goal: Improve Sankey themes with news hints and enable cache pre-warming.
-- Outputs: GNews cache table, GNews-assisted theme prompts, and a warm-cache script.
 
 ## Bug-Fix Narrative (By Category)
 
@@ -54,15 +51,16 @@ the way. Counts are approximate, based on the project prompt history.
 - Sankey mapping inversions, hover mismatches, and ordering issues.
 - Sunburst drilldown bugs: partial arcs, reappearing rings, incorrect re-rooting, reset
   behavior.
+- Sunburst drilldown stabilized with breadcrumb trail, subtree focus, and stable year colors.
 
 ### UI State & Filtering (≈5–7)
 - Sidebar filters not switching per tab.
 - Consistency Checker date filtering excluding valid runs.
 - Rerun/selection state quirks during Sunburst drilldown.
+- Drilldown locks filters to prevent cross-filter interference.
 
 ### LLM + News Integrations (≈4–6)
-- GDELT rate limiting, missing summaries, and modal issues.
-- Migration to GNews and simplified article summaries.
+- LLM summarization error handling and modal issues.
 
 ### Snowflake SQL / Stored Procedures (≈10–14)
 - SQL scripting syntax and variable binding errors.
@@ -83,7 +81,7 @@ the way. Counts are approximate, based on the project prompt history.
 - Visualization: Sunburst is the primary exploratory visualization with inline
   narratives.
 - Visualization: Sankey provides Year → Type → Name → State flow views.
-- News/LLM: GNews-backed summaries supported with inline narratives.
+- News/LLM: Summaries derived from FEMA metadata.
 - Consistency Checker: Read-only UI with manual refresh and scheduled task metadata.
 - Monitoring: Procedure runs as caller to avoid ownership privilege gaps.
 

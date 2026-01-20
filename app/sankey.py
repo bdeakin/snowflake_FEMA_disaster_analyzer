@@ -44,6 +44,16 @@ def render_sankey(
         fill: none;
         stroke-opacity: 0.35;
       }}
+      .link.highlighted {{
+        stroke-opacity: 0.8;
+      }}
+      .node.highlighted text {{
+        fill: #ffffff;
+      }}
+      .node.highlighted .label-bg {{
+        fill: #0b3d91;
+        stroke: #0b3d91;
+      }}
     </style>
   </head>
   <body>
@@ -59,18 +69,24 @@ def render_sankey(
         .attr("height", height);
 
       const color = d3.scaleOrdinal(d3.schemeTableau10);
+      const truncateLabel = (text, maxChars = 100) => {{
+        if (!text) return "";
+        if (text.length <= maxChars) return text;
+        return text.slice(0, Math.max(0, maxChars - 3)) + "...";
+      }};
+      const rightPadding = 160;
       const sankey = d3.sankey()
         .nodeId(d => d.id)
         .nodeWidth(20)
         .nodePadding(14)
-        .extent([[1, 5], [width - 1, height - 5]]);
+        .extent([[1, 5], [width - rightPadding, height - 5]]);
 
       const graph = sankey({{
         nodes: payload.nodes.map(d => Object.assign({{}}, d)),
         links: payload.links.map(d => Object.assign({{}}, d))
       }});
 
-      svg.append("g")
+      const linkGroup = svg.append("g")
         .attr("stroke", "#666")
         .selectAll("path")
         .data(graph.links)
@@ -95,14 +111,82 @@ def render_sankey(
         .attr("width", d => d.x1 - d.x0)
         .attr("fill", d => color(d.name || d.id))
         .append("title")
-        .text(d => `${{d.name || d.id}}\\n${{d.value}}`);
+        .text(d => `${{d.tooltip || d.name || d.id}}\\n${{d.value}}`);
 
-      node.append("text")
+      const labels = node.append("text")
         .attr("x", d => d.x0 < width / 2 ? d.x1 + 6 : d.x0 - 6)
         .attr("y", d => (d.y0 + d.y1) / 2)
         .attr("dy", "0.35em")
         .attr("text-anchor", d => d.x0 < width / 2 ? "start" : "end")
-        .text(d => d.name || d.id);
+        .text(d => truncateLabel(d.name || d.id));
+
+      labels.append("title")
+        .text(d => d.tooltip || d.name || d.id);
+
+      labels.each(function() {{
+        const text = d3.select(this);
+        const bbox = this.getBBox();
+        const padding = 2;
+        d3.select(this.parentNode)
+          .insert("rect", "text")
+          .attr("class", "label-bg")
+          .attr("x", bbox.x - padding)
+          .attr("y", bbox.y - padding)
+          .attr("width", bbox.width + padding * 2)
+          .attr("height", bbox.height + padding * 2)
+          .attr("fill", "#ffffff")
+          .attr("stroke", "#000000")
+          .attr("stroke-width", 0.5)
+          .attr("rx", 2)
+          .attr("ry", 2);
+      }});
+
+      const collectUpstream = (node, acc = new Set()) => {{
+        if (!node || acc.has(node.id)) return acc;
+        acc.add(node.id);
+        (node.sourceLinks || []).forEach(link => {{
+          acc.add(link);
+          collectUpstream(link.source, acc);
+        }});
+        return acc;
+      }};
+
+      const collectDownstream = (node, acc = new Set()) => {{
+        if (!node || acc.has(node.id)) return acc;
+        acc.add(node.id);
+        (node.targetLinks || []).forEach(link => {{
+          acc.add(link);
+          collectDownstream(link.target, acc);
+        }});
+        return acc;
+      }};
+
+      const highlightFlow = (link) => {{
+        const upstream = collectUpstream(link.source);
+        const downstream = collectDownstream(link.target);
+        const highlightLinks = new Set([link]);
+        graph.links.forEach(l => {{
+          if (upstream.has(l) || downstream.has(l)) {{
+            highlightLinks.add(l);
+          }}
+        }});
+        const highlightNodes = new Set();
+        highlightLinks.forEach(l => {{
+          highlightNodes.add(l.source);
+          highlightNodes.add(l.target);
+        }});
+        svg.selectAll(".link").classed("highlighted", d => highlightLinks.has(d));
+        svg.selectAll(".node").classed("highlighted", d => highlightNodes.has(d));
+      }};
+
+      const clearHighlight = () => {{
+        svg.selectAll(".link").classed("highlighted", false);
+        svg.selectAll(".node").classed("highlighted", false);
+      }};
+
+      svg.selectAll(".link")
+        .on("mouseover", (event, d) => highlightFlow(d))
+        .on("mouseout", () => clearHighlight());
     </script>
   </body>
 </html>

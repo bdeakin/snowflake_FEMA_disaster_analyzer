@@ -1,13 +1,19 @@
 from __future__ import annotations
 
+import csv
 import json
 import os
+from functools import lru_cache
+from pathlib import Path
 from typing import Iterable, Tuple, Dict, List, Optional
 
 import requests
 
 
 OPENAI_URL = "https://api.openai.com/v1/chat/completions"
+TRAINING_TSV_PATH = (
+    Path(__file__).resolve().parent.parent / "data" / "annual_disaster_theme_training.tsv"
+)
 def _format_top_states(states: Iterable[Tuple[str, int]]) -> str:
     items = [f"{state} ({count})" for state, count in states]
     return ", ".join(items) if items else "None"
@@ -17,6 +23,7 @@ def summarize_bump_entry(
     decade_label: str,
     disaster_type: str,
     top_states: Iterable[Tuple[str, int]],
+    binning: str = "decades",
     timeout_s: int = 20,
 ) -> str:
     api_key = (os.getenv("OPENAI_API_KEY") or "").strip().strip("\"'").strip()
@@ -26,16 +33,26 @@ def summarize_bump_entry(
     model = os.getenv("OPENAI_MODEL", "gpt-4o-mini")
     top_states_text = _format_top_states(top_states)
 
+    is_year = binning == "years"
+    period_label = "year" if is_year else "decade"
     system_prompt = (
         "You are a concise disaster analyst. Provide a broad thematic overview of the "
-        "selected disaster type and decade, highlighting key themes or notable events. "
+        f"selected disaster type and {period_label}, highlighting key themes or notable events. "
+        "Refer to counts as declared county-level disasters related to this disaster type. "
         "Then summarize the most affected states in bullets, naming notable instances "
-        "of the disaster type and impacts where possible. Use cautious language and do not "
-        "invent facts."
+        "of the disaster type and impacts where possible. "
+        + (
+            "For year-level summaries, try to name one notable example from that year if "
+            "it is a well-known event; if unsure, say so explicitly. "
+            if is_year
+            else ""
+        )
+        + "Use cautious language and do not invent facts."
     )
     user_prompt = (
         f"Disaster type: {disaster_type}\n"
-        f"Decade: {decade_label}\n"
+        f"Period ({period_label}): {decade_label}\n"
+        "Counts represent declared county-level disasters related to this disaster type.\n"
         f"Top affected states (by count): {top_states_text}\n"
         "Format:\n"
         "1) A short paragraph (2-4 sentences) with broad thematic overview and key themes.\n"
@@ -77,6 +94,71 @@ def _extract_json_list(text: str) -> List[Dict[str, object]]:
     if not isinstance(data, list):
         raise ValueError("Expected a JSON list in response.")
     return data
+
+
+@lru_cache(maxsize=1)
+def _load_theme_training_rows() -> List[Dict[str, str]]:
+    if not TRAINING_TSV_PATH.exists():
+        return []
+    rows: List[Dict[str, str]] = []
+    with TRAINING_TSV_PATH.open(newline="", encoding="utf-8") as handle:
+        reader = csv.DictReader(handle, delimiter="\t")
+        for row in reader:
+            if not row:
+                continue
+            if not (row.get("event_name") or "").strip():
+                continue
+            rows.append(row)
+    return rows
+
+
+def _build_theme_training_hints(
+    max_themes: int = 25,
+    max_events_per_theme: int = 3,
+    max_named_events: int = 40,
+) -> str:
+    rows = _load_theme_training_rows()
+    if not rows:
+        return ""
+
+    theme_examples: Dict[str, List[str]] = {}
+    named_events: List[str] = []
+    for row in rows:
+        event = (row.get("event_name") or "").strip()
+        theme = (row.get("disaster_theme") or "").strip()
+        if event:
+            named_events.append(event)
+        if theme:
+            theme_examples.setdefault(theme, [])
+            if event and event not in theme_examples[theme]:
+                theme_examples[theme].append(event)
+
+    theme_items = []
+    for theme, events in theme_examples.items():
+        if not events:
+            continue
+        theme_items.append(f"{theme}: {', '.join(events[:max_events_per_theme])}")
+    theme_items = theme_items[:max_themes]
+
+    named_unique: List[str] = []
+    seen = set()
+    for event in named_events:
+        if event in seen:
+            continue
+        seen.add(event)
+        named_unique.append(event)
+    named_unique = named_unique[:max_named_events]
+
+    hints = []
+    if theme_items:
+        hints.append("Theme examples from training data: " + "; ".join(theme_items) + ".")
+    if named_unique:
+        hints.append(
+            "Named event examples (may or may not map to a theme): "
+            + ", ".join(named_unique)
+            + "."
+        )
+    return " ".join(hints)
 
 
 def group_declaration_names(
@@ -127,7 +209,6 @@ def group_declaration_names(
 
 def group_sankey_names(
     records: List[Dict[str, str]],
-    gnews_headlines: Optional[List[str]] = None,
     timeout_s: int = 40,
     chunk_size: int = 50,
     progress_callback: Optional[callable] = None,
@@ -141,18 +222,18 @@ def group_sankey_names(
     if not cleaned:
         return []
 
-    headlines_text = (
-        "\n".join(f"- {title}" for title in (gnews_headlines or [])[:8]) or "None"
-    )
+    training_hints = _build_theme_training_hints()
     system_prompt = (
         "You classify FEMA disaster records and return a JSON list of objects. "
         "For each record, assign a broad theme for the given year (theme_group), and "
         "also determine whether the record refers to a named event (name_group). "
         "Use the provided record_id. If the name is not clearly a named event, set "
         "is_named_event=false, canonical_event_name=null, and name_group=\"Unnamed\". "
-        "Use the provided news headlines as hints for theme names when relevant. "
+        "If you cannot assign a theme from the input, set theme_group=\"No Theme\". "
         "Theme examples: \"2024 Atlantic Hurricane Season\", "
         "\"Atmospheric River Flooding\", \"Midwest Tornado Outbreak\". "
+        "Use these training hints as guidance only (not as required matches): "
+        f"{training_hints} "
         "Do not invent specifics beyond the input."
     )
 
@@ -173,10 +254,9 @@ def group_sankey_names(
             "Return a strict JSON list of objects with keys: record_id, "
             "theme_group (string), theme_confidence (0-1), "
             "is_named_event (boolean), canonical_event_name (string or null), "
-            "name_group (string), confidence (0-1). Input records:\n"
+            "name_group (string), confidence (0-1). "
+            "If no theme is clear, use theme_group=\"No Theme\". Input records:\n"
             + json.dumps(payload_records, ensure_ascii=True)
-            + "\nNews headlines (hints, may be empty):\n"
-            + headlines_text
         )
         payload = {
             "model": model,

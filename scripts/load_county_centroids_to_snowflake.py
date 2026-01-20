@@ -52,16 +52,16 @@ def main() -> None:
         )
         cur.execute("TRUNCATE TABLE ANALYTICS.REF.COUNTY_CENTROIDS;")
         try:
-            cur.execute("CREATE OR REPLACE TEMPORARY STAGE county_centroids_stage;")
-            cur.execute(
+        cur.execute("CREATE OR REPLACE TEMPORARY STAGE county_centroids_stage;")
+        cur.execute(
                 f"PUT 'file://{csv_path.as_posix()}' @county_centroids_stage AUTO_COMPRESS=TRUE;"
-            )
-            cur.execute(
-                "COPY INTO ANALYTICS.REF.COUNTY_CENTROIDS "
-                "FROM @county_centroids_stage "
+        )
+        cur.execute(
+            "COPY INTO ANALYTICS.REF.COUNTY_CENTROIDS "
+            "FROM @county_centroids_stage "
                 "FILE_FORMAT=(TYPE=CSV SKIP_HEADER=1 FIELD_OPTIONALLY_ENCLOSED_BY='\"') "
-                "PURGE=TRUE;"
-            )
+            "PURGE=TRUE;"
+        )
         except OperationalError:
             rows = []
             with csv_path.open(newline="", encoding="utf-8") as f:

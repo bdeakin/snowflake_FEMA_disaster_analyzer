@@ -3,8 +3,9 @@
 This application provides a fast “overview → investigate → drilldown” workflow on FEMA
 disaster data hosted in Snowflake. The pipeline builds curated Silver and aggregated Gold
 datasets, and the Streamlit app renders a choropleth, a period summary, and a drilldown
-map with county-centroid jitter. The UI is organized into Explore, Disaster Type Trends,
-Sankey, and Sunburst tabs, each with its own independent sidebar filters.
+map with county-centroid jitter. The UI is organized into Map View, Change in Disaster Types
+Over Time, Annual Disaster Themes, Disaster Impact Assessment, and Consistency Checker tabs,
+with an About tab that documents narrative, architecture, and integrations.
 
 ## Core Components
 - **Snowflake Public Data**: Source FEMA tables in `SNOWFLAKE_PUBLIC_DATA_PAID.PUBLIC_DATA`.
@@ -15,7 +16,6 @@ Sankey, and Sunburst tabs, each with its own independent sidebar filters.
 - **Streamlit App**: `app/app.py` drives UI and calls query helpers to render Plotly charts.
 - **LLM Summary**: Optional OpenAI summary for bump chart drilldown selections.
 - **Sankey Cache**: LLM name grouping cache stored in `ANALYTICS.MONITORING`.
-- **GNews Cache**: Optional GNews theme hints cached in `ANALYTICS.MONITORING`.
 
 ## Data & UI Flow
 \n```mermaid
@@ -38,6 +38,8 @@ flowchart LR
 - Active tab selection controls which sidebar filters are rendered to keep state isolated.
 - Sunburst narratives render inline below the chart based on selection (year, event, state).
 - Sunburst selection filters the displayed subtree to keep focus on the active event path.
+- Sunburst drilldown shows breadcrumbs and locks filters while focused.
+- Sunburst year colors are assigned from a stable, session-level map.
 - Sunburst filtering diagnostics track node subsets during drill-in.
 - Filtered sunburst totals are recomputed to keep full-circle rendering.
 - Sunburst selection updates trigger a rerun to apply the new subtree immediately.
@@ -51,4 +53,3 @@ flowchart LR
 - Consistency Checker failure notes record the last query error message or step name.
 - Development narrative is tracked in `DEVELOPMENT_NARRATIVE.md`.
 - Sankey uses a cached LLM grouping of declaration names per disaster record.
-- Sankey theme grouping can optionally use GNews headlines as hints.

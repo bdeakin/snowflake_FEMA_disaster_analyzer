@@ -17,19 +17,29 @@ def _jitter_pair(lat: float, lon: float, seed: str, scale: float = 0.06) -> tupl
 
 
 def build_choropleth(df: pd.DataFrame):
-    return px.choropleth(
+    fig = px.choropleth(
         df,
         locations="state",
         locationmode="USA-states",
         color="disaster_count",
         color_continuous_scale="Reds",
         scope="usa",
+        hover_data={"state": False, "disaster_count": False},
+        custom_data=["state", "disaster_count"],
     )
+    fig.update_traces(
+        hovertemplate=(
+            "State: %{customdata[0]}<br>"
+            "County-level declared disasters: %{customdata[1]}<extra></extra>"
+        )
+    )
+    return fig
 
 
 def build_cube_grid(df: pd.DataFrame, grain: str):
     df = df.copy()
     df["period_bucket"] = pd.to_datetime(df["period_bucket"])
+    df["year"] = df["period_bucket"].dt.year
     if grain == "month":
         df["period_label"] = df["period_bucket"].dt.strftime("%b %Y")
     elif grain == "year":
@@ -38,25 +48,34 @@ def build_cube_grid(df: pd.DataFrame, grain: str):
         df["period_label"] = df["period_bucket"].dt.strftime("%Y-%m-%d")
 
     df["disaster_count_log"] = np.log1p(df["disaster_count"])
-    return px.scatter(
+    fig = px.scatter(
         df,
         x="period_label",
         y="disaster_type",
         size="disaster_count_log",
         color="disaster_count",
         color_continuous_scale="Reds",
-        hover_data={"disaster_count": True, "period_label": True, "disaster_type": True},
-        custom_data=["period_bucket"],
+        hover_data={"disaster_count": False, "period_label": False, "disaster_type": False},
+        custom_data=["period_bucket", "year", "disaster_type", "disaster_count"],
     )
+    fig.update_traces(
+        hovertemplate=(
+            "Year: %{customdata[1]}<br>"
+            "Type: %{customdata[2]}<br>"
+            "County-level declared disasters: %{customdata[3]}<extra></extra>"
+        )
+    )
+    return fig
 
 
 def build_drilldown(df: pd.DataFrame, color_map: dict[str, str] | None = None):
     df = df.copy()
+    name_column = "display_name" if "display_name" in df.columns else "declaration_name"
     df[["lat_jitter", "lon_jitter"]] = df.apply(
         lambda row: _jitter_pair(
             float(row["centroid_lat"]),
             float(row["centroid_lon"]),
-            f"{row['disaster_id']}-{row['declaration_name']}",
+            f"{row['disaster_id']}-{row[name_column]}",
         ),
         axis=1,
         result_type="expand",
@@ -65,8 +84,8 @@ def build_drilldown(df: pd.DataFrame, color_map: dict[str, str] | None = None):
         df,
         lat="lat_jitter",
         lon="lon_jitter",
-        hover_name="declaration_name",
-        color="declaration_name",
+        hover_name=name_column,
+        color=name_column,
         color_discrete_map=color_map,
         hover_data={
             "disaster_id": True,
@@ -79,7 +98,17 @@ def build_drilldown(df: pd.DataFrame, color_map: dict[str, str] | None = None):
             "lat_jitter": False,
             "lon_jitter": False,
         },
+        custom_data=["display_name", "hover_start_date", "hover_end_date", "county_name"],
         scope="usa",
+    )
+    fig.update_traces(
+        hovertemplate=(
+            "<b>%{customdata[0]}</b><br>"
+            "<br>"
+            "Declaration Start Date: %{customdata[1]}<br>"
+            "Declaration End Date: %{customdata[2]}<br>"
+            "County: %{customdata[3]}<extra></extra>"
+        )
     )
     fig.update_geos(fitbounds="locations")
     return fig
@@ -101,6 +130,12 @@ def build_bump_chart(df: pd.DataFrame, binning: str = "decades"):
     color_map = {t: palette[i % len(palette)] for i, t in enumerate(types)}
 
     fig = go.Figure()
+    period_label_name = "Decade"
+    if binning == "years":
+        period_label_name = "Year"
+    elif binning == "months":
+        period_label_name = "Month"
+
     for disaster_type, group in df.groupby("disaster_type"):
         group = group.sort_values("period_bucket")
         labels = [f"#{int(r)}" for r in group["rank"].tolist()]
@@ -137,8 +172,15 @@ def build_bump_chart(df: pd.DataFrame, binning: str = "decades"):
                 customdata=customdata,
                 hovertemplate=(
                     "Disaster type: %{customdata[1]}<br>"
-                    "Decade: %{customdata[0]|%Y}s<br>"
-                    "Rank: %{y}<br>"
+                    f"{period_label_name}: "
+                    + (
+                        "%{customdata[0]|%b %Y}<br>"
+                        if binning == "months"
+                        else "%{customdata[0]|%Y}s<br>"
+                        if binning == "decades"
+                        else "%{customdata[0]|%Y}<br>"
+                    )
+                    + "Rank: %{y}<br>"
                     "Count: %{customdata[2]}<extra></extra>"
                 ),
                 showlegend=True,

@@ -715,30 +715,21 @@ Format:
   prompt: |
     When I click "Run now" the following error occurs: Failed to run consistency check: Unknown error. However, it appears that a row is created in consistency results.
   outcome: Downgraded Run Now errors to warning and continue to show results
-  next: Retry Run Now and verify results row- timestamp: 2026-01-19 04:10
+  next: Retry Run Now and verify results row
+
+- timestamp: 2026-01-19 04:10
   goal: Debug Run Now stored procedure failure
   prompt: |
     When I click "Run Now" the following error occurs: Run Now returned an error, but a results row may still have been recorded. Error: Unknown error. The results rows show Stored procedure failed.
   outcome: Added runtime debug logging around Run Now and consistency check execution
   next: Reproduce Run Now and inspect debug logs
 
-- timestamp: 2026-01-19 12:45
-  goal: Add Sankey tab with LLM name grouping cache
+- timestamp: 2026-01-19 18:30
+  goal: Stabilize sunburst drilldown UX
   prompt: |
-    Implement the plan as specified, it is attached for your reference.
-  outcome: Added Sankey tab, D3 renderer, LLM grouping cache, and Snowflake DDL
-  next: Run app smoke test
-
-- timestamp: 2026-01-19 13:35
-  goal: Explore chart scale + filter sync + Sankey multi-select
-  prompt: |
-    On the Explore Tab under Disaster Summary, some Disaster Types have such a small number...
-  outcome: Log-scaled cube bubbles, drilldown resets on filter changes, Sankey multi-select defaults
-  next: Commit point release
-
-- timestamp: 2026-01-19 14:05
-  goal: GNews-assisted themes + cache prewarm
-  prompt: |
-    Enhance the thematic grouping for the Sankey tab by using GNews...
-  outcome: Added GNews cache table, GNews-assisted theme hints, and warm_sankey_cache.py
-  next: Commit point release
+    Stabilize sunburst drilldown behavior: lock filters during drilldown,
+    add breadcrumb trail, prevent stale click replays, keep year colors
+    stable across drilldowns, and avoid repeated name grouping calls.
+  outcome: Implemented filter lock + breadcrumbs, stable year color map, and
+    incremental name grouping cache; removed debug instrumentation after fix.
+  next: Monitor drilldown behavior for any remaining rerender regressions.
