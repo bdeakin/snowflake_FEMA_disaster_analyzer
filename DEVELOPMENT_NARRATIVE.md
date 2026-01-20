@@ -58,6 +58,7 @@ the way. Counts are approximate, based on the project prompt history.
 - Consistency Checker date filtering excluding valid runs.
 - Rerun/selection state quirks during Sunburst drilldown.
 - Drilldown locks filters to prevent cross-filter interference.
+- Annual Disaster Themes defaults adjusted to focus initial view.
 
 ### LLM + News Integrations (≈4–6)
 - LLM summarization error handling and modal issues.

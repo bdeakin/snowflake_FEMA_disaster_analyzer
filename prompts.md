@@ -742,3 +742,10 @@ Format:
   outcome: Expanded project phases and challenge descriptions in app metadata
     and updated documentation references.
   next: Refresh About tab to validate content display.
+
+- timestamp: 2026-01-20 00:15
+  goal: Default Annual Disaster Themes to Fire
+  prompt: |
+    Default the Annual Disaster Themes filter to Fire only.
+  outcome: Default selection now sets Fire and deselects other types.
+  next: Verify initial filter state in the app.

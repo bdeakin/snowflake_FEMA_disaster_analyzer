@@ -1080,7 +1080,7 @@ with tabs[3]:
             index=year_options.index(default_year),
             key="filters_sankey_year",
         )
-        default_sankey = {"Hurricane", "Tropical Storm", "Volcanic Eruption"}
+        default_sankey = {"Fire"}
         for dtype in type_options:
             key = f"filters_sankey_type_{dtype}"
             if key not in st.session_state:
