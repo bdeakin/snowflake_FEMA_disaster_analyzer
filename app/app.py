@@ -1337,14 +1337,6 @@ with tabs[4]:
                 breadcrumb_parts.append(str(selected_node["state"]))
         if len(breadcrumb_parts) > 1:
             st.caption(" > ".join(breadcrumb_parts))
-        # #region agent log
-        _debug_log(
-            "H5",
-            "app.py:sunburst_nodes:selected",
-            "Selected node before filtering",
-            {"selected_node": selected_node},
-        )
-        # #endregion
         filtered_nodes = nodes_df
         selected_id = None
         if isinstance(selected_node, dict):
@@ -1515,19 +1507,11 @@ with tabs[4]:
                         if cache_key not in cache:
                             event_df = df[(df["year"] == str(year_int)) & (df["event"] == event_name)]
                             top_states = event_df["state"].value_counts().head(8).items()
-                            query = f"\"{event_name}\" {year_int}"
-                            with st.spinner("Fetching named event headlines..."):
-                                try:
-                                    headlines = []
-                                except Exception as exc:
-                                    st.error(f"News lookup failed: {exc}")
-                                    headlines = []
                             with st.spinner("Summarizing named event..."):
                                 cache[cache_key] = summarize_named_event(
                                     event_name,
                                     year_int,
                                     top_states,
-                                    headlines,
                                 )
                         st.write(cache[cache_key])
 
@@ -1543,19 +1527,11 @@ with tabs[4]:
                     else:
                         cache_key = f"sunburst:state:{year_int}:{event_name}:{state}"
                         if cache_key not in cache:
-                            query = f"\"{event_name}\" {state} {year_int}"
-                            with st.spinner("Fetching state headlines..."):
-                                try:
-                                    headlines = []
-                                except Exception as exc:
-                                    st.error(f"News lookup failed: {exc}")
-                                    headlines = []
                             with st.spinner("Summarizing event in state..."):
                                 cache[cache_key] = summarize_event_state(
                                     event_name,
                                     state,
                                     year_int,
-                                    headlines,
                                 )
                         st.write(cache[cache_key])
                 else:
@@ -1606,6 +1582,14 @@ with tabs[5]:
         if task_status.empty:
             st.info("Task metadata not available.")
         else:
+            task_row = task_status.iloc[0]
+            task_state = task_row.get("state")
+            next_scheduled = task_row.get("next_scheduled_time")
+            last_success = task_row.get("last_successful_run_time")
+            status_cols = st.columns(3)
+            status_cols[0].metric("12H Task Status", task_state or "Unknown")
+            status_cols[1].metric("Next Scheduled Run", str(next_scheduled) if next_scheduled else "Unknown")
+            status_cols[2].metric("Last Successful Run", str(last_success) if last_success else "Unknown")
             st.dataframe(_format_year_columns(task_status), use_container_width=True)
             if "next_scheduled_time" in task_status.columns:
                 next_run = task_status["next_scheduled_time"].dropna()

@@ -530,7 +530,22 @@ def get_task_status(task_fqns: list[str]) -> QueryResult:
     try:
         return fetch_df(sql, params)
     except Exception:
-        return QueryResult(df=pd.DataFrame(), sql=sql, params=params)
+        conn = get_connection()
+        try:
+            cur = conn.cursor()
+            cur.execute("SHOW TASKS IN SCHEMA ANALYTICS.MONITORING")
+            cur.execute("SELECT * FROM TABLE(RESULT_SCAN(LAST_QUERY_ID()))")
+            df = cur.fetch_pandas_all()
+            df.columns = [str(c).lower() for c in df.columns]
+            if "name" in df.columns:
+                df = df[df["name"].str.upper().isin(task_names)]
+            return QueryResult(
+                df=df,
+                sql="SHOW TASKS IN SCHEMA ANALYTICS.MONITORING",
+                params={},
+            )
+        finally:
+            conn.close()
 
 
 def get_task_history(task_fqns: list[str], limit_rows: int = 5) -> QueryResult:

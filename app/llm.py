@@ -328,7 +328,6 @@ def summarize_named_event(
     event_name: str,
     year: Optional[int],
     top_states: Iterable[Tuple[str, int]],
-    headlines: List[Dict[str, str]],
     timeout_s: int = 25,
 ) -> str:
     api_key = os.getenv("OPENAI_API_KEY")
@@ -337,19 +336,14 @@ def summarize_named_event(
 
     model = os.getenv("OPENAI_MODEL", "gpt-4o-mini")
     states_text = _format_pairs(top_states)
-    headline_text = "\n".join(
-        f"- {article.get('title')} ({article.get('url')})" for article in headlines
-    ) or "None"
     system_prompt = (
-        "You are a concise disaster analyst. Provide a brief narrative about the named event "
-        "and summarize relevant news headlines if available. Use cautious language and do not "
-        "invent facts."
+        "You are a concise disaster analyst. Provide a brief narrative about the named event. "
+        "Use cautious language and do not invent facts."
     )
     user_prompt = (
         f"Named event: {event_name}\n"
         f"Year: {year if year is not None else 'Unknown'}\n"
         f"Top affected states (by count): {states_text}\n"
-        f"Headlines:\n{headline_text}\n"
         "Return a short paragraph (2-4 sentences)."
     )
     payload = {
@@ -406,7 +400,6 @@ def summarize_event_state(
     event_name: str,
     state: str,
     year: Optional[int],
-    headlines: List[Dict[str, str]],
     timeout_s: int = 25,
 ) -> str:
     api_key = os.getenv("OPENAI_API_KEY")
@@ -414,19 +407,14 @@ def summarize_event_state(
         raise RuntimeError("OPENAI_API_KEY is not set.")
 
     model = os.getenv("OPENAI_MODEL", "gpt-4o-mini")
-    headline_text = "\n".join(
-        f"- {article.get('title')} ({article.get('url')})" for article in headlines
-    ) or "None"
     system_prompt = (
         "You are a concise disaster analyst. Provide a brief narrative about the named event "
-        "impact in the specified state, referencing headlines if available. Use cautious "
-        "language and do not invent facts."
+        "impact in the specified state. Use cautious language and do not invent facts."
     )
     user_prompt = (
         f"Named event: {event_name}\n"
         f"State: {state}\n"
         f"Year: {year if year is not None else 'Unknown'}\n"
-        f"Headlines:\n{headline_text}\n"
         "Return a short paragraph (2-4 sentences)."
     )
     payload = {
