@@ -75,6 +75,7 @@ the way. Counts are approximate, based on the project prompt history.
 ### Instrumentation / Cleanup (≈3–5)
 - Temporary debug logging during investigations, later removed.
 - Removal of dead code and empty directories.
+- About tab narrative expanded to clarify intent and technical hurdles.
 
 ## Current State
 

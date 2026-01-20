@@ -10,6 +10,9 @@ intended as a high-level narrative; see `git log` for exhaustive details.
 - Sunburst drilldown stabilized with locked filters, breadcrumbs, and stable year colors.
 - Sunburst name grouping now uses an incremental cache to avoid repeated LLM calls.
 
+## v1.12
+- Expanded About tab narrative for project phases and technical challenges.
+
 ## v1.9
 - Explore cube chart now uses log-scaled bubble sizes for small counts.
 - Explore drilldown resets on filter changes to keep results in sync.

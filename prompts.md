@@ -733,3 +733,12 @@ Format:
   outcome: Implemented filter lock + breadcrumbs, stable year color map, and
     incremental name grouping cache; removed debug instrumentation after fix.
   next: Monitor drilldown behavior for any remaining rerender regressions.
+
+- timestamp: 2026-01-19 19:10
+  goal: Update About tab narrative
+  prompt: |
+    Expand the About tab development narrative and key technical challenges
+    to better explain intent and the purpose of recent functionality.
+  outcome: Expanded project phases and challenge descriptions in app metadata
+    and updated documentation references.
+  next: Refresh About tab to validate content display.

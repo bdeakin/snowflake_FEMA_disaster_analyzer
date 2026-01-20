@@ -47,6 +47,7 @@ flowchart LR
 - Sunburst ignores the first event after rerun to prevent unintended auto-selection.
 - Sunburst drill-in re-roots the chart at the selected node to hide prior rings.
 - Release summaries are tracked in `VERSION_HISTORY.md`.
+- About tab narrative is sourced from `config/app_metadata.py` for centralized edits.
 - Consistency Checker writes to `ANALYTICS.MONITORING` via a 12-hour Snowflake Task.
 - Consistency Checker displays scheduled task metadata and the next scheduled run time.
 - Consistency Checker results view is refreshed on demand without triggering a run.
