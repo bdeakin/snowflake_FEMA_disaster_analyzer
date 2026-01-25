@@ -756,3 +756,10 @@ Format:
     Default Annual Disaster Themes to Year 2024 and select Fire, Flood, Hurricane.
   outcome: Default year set to 2024 and type selection updated to Fire/Flood/Hurricane.
   next: Verify initial filter state in the app.
+
+- timestamp: 2026-01-25 19:15
+  goal: Support Snowflake key-pair auth
+  prompt: |
+    Make SNOWFLAKE_PASSWORD optional when SNOWFLAKE_PRIVATE_KEY_B64 is set.
+  outcome: Connection now requires password or private key, enabling MFA-safe auth.
+  next: Update Streamlit secrets and redeploy.

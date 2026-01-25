@@ -73,6 +73,7 @@ the way. Counts are approximate, based on the project prompt history.
 - INFORMATION_SCHEMA / ACCOUNT_USAGE access errors.
 - Task metadata access and safe fallbacks.
 - Procedure execution role vs caller privileges.
+- MFA/TOTP constraints addressed via key-pair auth support.
 
 ### Instrumentation / Cleanup (≈3–5)
 - Temporary debug logging during investigations, later removed.

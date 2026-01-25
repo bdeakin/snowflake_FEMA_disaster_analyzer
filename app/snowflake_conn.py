@@ -1,3 +1,4 @@
+import base64
 import os
 
 from dotenv import load_dotenv
@@ -17,7 +18,6 @@ REQUIRED_VARS = [
     "SNOWFLAKE_DATABASE",
     "SNOWFLAKE_SCHEMA",
     "SNOWFLAKE_USER",
-    "SNOWFLAKE_PASSWORD",
 ]
 
 OPTIONAL_FLAGS = [
@@ -49,10 +49,18 @@ def get_connection():
     load_dotenv()
     ocsp_fail_open = _flag_enabled("SNOWFLAKE_OCSP_FAIL_OPEN")
     disable_ocsp_checks = _flag_enabled("SNOWFLAKE_DISABLE_OCSP_CHECKS")
+    private_key_b64 = os.getenv("SNOWFLAKE_PRIVATE_KEY_B64")
+    private_key = None
+    if private_key_b64:
+        private_key = base64.b64decode(private_key_b64)
+    password = os.getenv("SNOWFLAKE_PASSWORD")
+    if not private_key and not password:
+        raise RuntimeError("Missing SNOWFLAKE_PASSWORD or SNOWFLAKE_PRIVATE_KEY_B64")
     return snowflake.connector.connect(
         account=_get_env("SNOWFLAKE_ACCOUNT"),
         user=_get_env("SNOWFLAKE_USER"),
-        password=_get_env("SNOWFLAKE_PASSWORD"),
+        password=password,
+        private_key=private_key,
         role=_get_env("SNOWFLAKE_ROLE"),
         warehouse=_get_env("SNOWFLAKE_WAREHOUSE"),
         database=_get_env("SNOWFLAKE_DATABASE"),

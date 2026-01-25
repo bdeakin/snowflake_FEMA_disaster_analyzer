@@ -19,6 +19,9 @@ intended as a high-level narrative; see `git log` for exhaustive details.
 ## v1.14
 - Annual Disaster Themes defaults to 2024 with Fire, Flood, and Hurricane selected.
 
+## v1.15
+- Snowflake connection now supports key-pair auth without requiring passwords.
+
 ## v1.9
 - Explore cube chart now uses log-scaled bubble sizes for small counts.
 - Explore drilldown resets on filter changes to keep results in sync.

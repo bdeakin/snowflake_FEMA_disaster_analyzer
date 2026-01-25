@@ -49,6 +49,7 @@ flowchart LR
 - Release summaries are tracked in `VERSION_HISTORY.md`.
 - About tab narrative is sourced from `config/app_metadata.py` for centralized edits.
 - Consistency Checker writes to `ANALYTICS.MONITORING` via a 12-hour Snowflake Task.
+- Snowflake connection supports key-pair auth for environments with MFA.
 - Consistency Checker displays scheduled task metadata and the next scheduled run time.
 - Consistency Checker results view is refreshed on demand without triggering a run.
 - Consistency Checker failure notes record the last query error message or step name.
