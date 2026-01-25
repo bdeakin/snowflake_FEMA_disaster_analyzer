@@ -32,6 +32,12 @@ intended as a high-level narrative; see `git log` for exhaustive details.
 - Sunburst query now aggregates county counts in SQL to reduce row volume.
 - Cortex assistant uses Analyst semantic view via REST with answer previews.
 
+## v1.19
+- Map View uses effective dates to include late-reported years in filters.
+- Cortex assistant now passes state/year/type context and shows send progress.
+- Disaster Impact Assessment shows per-type counts and improved empty-state handling.
+- Annual Disaster Themes adds cache status-by-year context in filters.
+
 ## v1.9
 - Explore cube chart now uses log-scaled bubble sizes for small counts.
 - Explore drilldown resets on filter changes to keep results in sync.

@@ -39,6 +39,7 @@ These keep the UI responsive by serving pre-aggregated counts rather than raw ro
 - **Choropleth** uses `ANALYTICS.GOLD.DISASTERS_BY_STATE` for state‑level totals.
 - **Cube grid** uses Gold cube tables (year/month/week) depending on the selected time range.
 - **Drilldown map** uses the Silver table to display county‑level points with centroids.
+- Map filters use an effective date (declaration/begin/end) to include late‑reported years.
 
 ### Change in Disaster Types Over Time
 - Uses Gold cube tables to power the bump chart (fast, aggregated counts).

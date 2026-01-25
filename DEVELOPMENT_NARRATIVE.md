@@ -65,13 +65,18 @@ the way. Counts are approximate, based on the project prompt history.
 - Drilldown locks filters to prevent cross-filter interference.
 - Annual Disaster Themes defaults adjusted to focus initial view.
 - Annual Disaster Themes defaults updated to 2024 with Fire, Flood, and Hurricane.
+- Map View now preserves selected state across filter changes and gates drilldown until
+  a new cube selection is made.
+- Annual Disaster Themes includes cache status-by-year context in filters.
 
 ### Data Volume Reduction (≈1–2)
 - Sankey query now aggregates county counts in SQL to reduce row volume and cost.
+- Sunburst query now aggregates county counts in SQL and sums them in the UI.
 
 ### Cortex Analyst (≈2–3)
 - Added REST integration for the Cortex assistant with semantic view routing.
 - Added SQL execution + preview to surface answers beyond the interpretation text.
+- Added context enrichment (years, types, state) and send-time progress messaging.
 
 ### LLM + News Integrations (≈4–6)
 - LLM summarization error handling and modal issues.
@@ -100,6 +105,8 @@ the way. Counts are approximate, based on the project prompt history.
 - Visualization: Sunburst is the primary exploratory visualization with inline
   narratives.
 - Visualization: Sankey provides Year → Type → Name → State flow views.
+- Cortex: Map View includes a Cortex Analyst assistant backed by a semantic view
+  and REST API responses with SQL result previews.
 - News/LLM: Summaries derived from FEMA metadata.
 - Consistency Checker: Read-only UI with manual refresh and scheduled task metadata.
 - Monitoring: Procedure runs as caller to avoid ownership privilege gaps.

@@ -45,6 +45,7 @@ On the **Consistency Checker** tab, the app:
 - Shows **task status** and next scheduled run using task metadata.
 - Displays **task history** (last 5 runs).
 - Presents **consistency results** with filters for date range and status.
+- Provides a read-only refresh button that reloads results without triggering a run.
 
 This gives users a clear view of whether the data pipeline is current and trustworthy,
 and when the next automated validation will occur.

@@ -408,13 +408,16 @@ def summarize_event_state(
 
     model = os.getenv("OPENAI_MODEL", "gpt-4o-mini")
     system_prompt = (
-        "You are a concise disaster analyst. Provide a brief narrative about the named event "
-        "impact in the specified state. Use cautious language and do not invent facts."
+        "You are a concise disaster analyst. Provide a brief narrative about how the named "
+        "event affected the specified state. Emphasize concrete impacts such as damage, "
+        "population effects, infrastructure disruption, or response actions if known. "
+        "Use cautious language and do not invent facts."
     )
     user_prompt = (
         f"Named event: {event_name}\n"
         f"State: {state}\n"
         f"Year: {year if year is not None else 'Unknown'}\n"
+        "If specific impact details are not known, say so explicitly.\n"
         "Return a short paragraph (2-4 sentences)."
     )
     payload = {

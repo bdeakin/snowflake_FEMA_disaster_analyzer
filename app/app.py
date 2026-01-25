@@ -75,6 +75,7 @@ try:
         get_sankey_rows,
         get_state_choropleth,
         get_sunburst_rows,
+        get_sankey_cache_status_by_year,
         get_task_history,
         get_task_status,
         get_trends_bump_ranks,
@@ -116,6 +117,7 @@ except ImportError:
     get_sankey_rows = queries.get_sankey_rows
     get_state_choropleth = queries.get_state_choropleth
     get_sunburst_rows = queries.get_sunburst_rows
+    get_sankey_cache_status_by_year = queries.get_sankey_cache_status_by_year
     get_task_history = queries.get_task_history
     get_task_status = queries.get_task_status
     get_trends_bump_ranks = queries.get_trends_bump_ranks
@@ -644,6 +646,14 @@ with tabs[1]:
     with filter_col:
         st.subheader("Filters")
         _render_data_range_note()
+        selected_state_filter = st.session_state.get("selected_state")
+        st.caption(f"Selected state: {selected_state_filter or 'None'}")
+        if st.button("Clear selected state", key="filters_explore_clear_state", disabled=selected_state_filter is None):
+            st.session_state.pop("selected_state", None)
+            st.session_state.pop("selected_cube", None)
+            st.session_state.pop("selected_state_for_cube", None)
+            st.session_state["explore_map_nonce"] = st.session_state.get("explore_map_nonce", 0) + 1
+            st.rerun()
         explore_end_default = max_data_year
         explore_start_default = max(1953, explore_end_default - 2)
         explore_years = st.slider(
@@ -673,7 +683,6 @@ with tabs[1]:
         )
         if st.session_state.get("explore_filter_sig") != current_filter_sig:
             st.session_state["explore_filter_sig"] = current_filter_sig
-            st.session_state.pop("selected_state", None)
             st.session_state.pop("selected_cube", None)
             st.session_state.pop("declaration_color_map", None)
             st.session_state.pop("declaration_color_index", None)
@@ -693,6 +702,10 @@ with tabs[1]:
 
         selected_state = st.session_state.get("selected_state")
         selected_cube = st.session_state.get("selected_cube")
+        if selected_state != st.session_state.get("selected_state_for_cube"):
+            st.session_state.pop("selected_cube", None)
+            st.session_state.pop("selected_state_for_cube", None)
+            selected_cube = None
 
         with st.spinner("Loading choropleth..."):
             choropleth_result = get_state_choropleth(
@@ -707,12 +720,17 @@ with tabs[1]:
                 use_container_width=True,
                 on_select="rerun",
                 selection_mode="points",
+                key=f"explore_choropleth_{st.session_state.get('explore_map_nonce', 0)}",
             )
 
         if state_event and state_event.selection and state_event.selection.points:
-            selected_state = state_event.selection.points[0].get("location")
-            st.session_state["selected_state"] = selected_state
-            st.session_state.pop("selected_cube", None)
+            clicked_state = state_event.selection.points[0].get("location")
+            if clicked_state and clicked_state != st.session_state.get("selected_state"):
+                selected_state = clicked_state
+                st.session_state["selected_state"] = selected_state
+                st.session_state.pop("selected_cube", None)
+                st.session_state.pop("selected_state_for_cube", None)
+                st.rerun()
 
         if selected_state:
             st.subheader(
@@ -744,6 +762,7 @@ with tabs[1]:
                         "period_bucket": period_bucket or point.get("x"),
                     }
                     st.session_state["selected_cube"] = selected_cube
+                    st.session_state["selected_state_for_cube"] = selected_state
             else:
                 st.info("No cube data for selection.")
 
@@ -871,9 +890,7 @@ with tabs[1]:
                     "filters_drilldown_names_"
                     + hashlib.md5(filter_sig.encode("utf-8")).hexdigest()
                 )
-                drilldown_chart_col, drilldown_legend_col = st.columns([4, 1])
-                with drilldown_legend_col:
-                    st.caption("Declaration names")
+                with st.expander("Declaration names", expanded=True):
                     name_ranges = (
                         drilldown_df.groupby("display_name", dropna=False)
                         .agg(
@@ -912,16 +929,15 @@ with tabs[1]:
                             selected_names.append(name)
 
                 filtered_df = drilldown_df[drilldown_df["display_name"].isin(selected_names)]
-                with drilldown_chart_col:
-                    if filtered_df.empty:
-                        st.info("No drilldown data for selected declaration names.")
-                    else:
-                        drilldown_fig = build_drilldown(filtered_df, color_map=color_map)
-                        drilldown_fig.update_layout(
-                            margin={"r": 0, "t": 0, "l": 0, "b": 0},
-                            showlegend=True,
-                        )
-                        st.plotly_chart(drilldown_fig, use_container_width=True)
+                if filtered_df.empty:
+                    st.info("No drilldown data for selected declaration names.")
+                else:
+                    drilldown_fig = build_drilldown(filtered_df, color_map=color_map)
+                    drilldown_fig.update_layout(
+                        margin={"r": 0, "t": 0, "l": 0, "b": 0},
+                        showlegend=True,
+                    )
+                    st.plotly_chart(drilldown_fig, use_container_width=True)
 
     with assistant_col:
         st.subheader("Cortex")
@@ -936,16 +952,54 @@ with tabs[1]:
             height=120,
         )
         if st.button("Send", key="choropleth_chat_send") and user_prompt.strip():
+            selected_state_for_cortex = st.session_state.get("selected_state")
+            selected_years_for_cortex = st.session_state.get("filters_explore_year_range")
+            selected_types_for_cortex = [
+                dtype for dtype in type_options if st.session_state.get(f"filters_explore_type_{dtype}")
+            ]
+            context_steps = []
+            if selected_years_for_cortex:
+                context_steps.append("Sending year(s) as context...")
+            if selected_types_for_cortex:
+                context_steps.append("Sending disaster type(s) as context...")
+            if selected_state_for_cortex:
+                context_steps.append("Sending state as context...")
+            progress = st.progress(0, text="Preparing context...")
+            total_steps = len(context_steps)
+            if total_steps:
+                for idx, label in enumerate(context_steps, start=1):
+                    progress.progress(int(idx / total_steps * 80), text=label)
+            else:
+                progress.progress(40, text="No context selected.")
+            cortex_prompt = (
+                "Answer with the final result, not just the interpretation. "
+                "If the question asks for a top state, include the state name and count. "
+                + user_prompt.strip()
+            )
+            if selected_years_for_cortex:
+                cortex_prompt = (
+                    f"Selected years: {selected_years_for_cortex[0]} to "
+                    f"{selected_years_for_cortex[1]}. {cortex_prompt}"
+                )
+            if selected_types_for_cortex:
+                cortex_prompt = (
+                    f"Selected disaster types: {', '.join(selected_types_for_cortex)}. "
+                    f"{cortex_prompt}"
+                )
+            if selected_state_for_cortex:
+                cortex_prompt = f"Selected state: {selected_state_for_cortex}. {cortex_prompt}"
+            progress.progress(100, text="Sending request to Cortex...")
             st.session_state[chat_key].append(
                 {"role": "user", "content": user_prompt.strip()}
             )
             try:
-                response_text, response_df = call_choropleth_assistant(user_prompt.strip())
+                response_text, response_df = call_choropleth_assistant(cortex_prompt)
                 if not response_text and response_df is None:
                     response_text = "No response returned from the assistant."
             except Exception as exc:
                 response_text = f"Assistant error: {exc}"
                 response_df = None
+            progress.empty()
             st.session_state[chat_key].append(
                 {"role": "assistant", "content": response_text, "result_df": response_df}
             )
@@ -957,8 +1011,27 @@ with tabs[1]:
             result_df = message.get("result_df")
             st.markdown(f"**{role.title()}:** {content}")
             if role == "assistant" and isinstance(result_df, pd.DataFrame):
+                display_df = result_df.copy()
+                for col in display_df.columns:
+                    series = display_df[col]
+                    if series.dtype.kind not in {"i", "u", "f"}:
+                        continue
+                    numeric = pd.to_numeric(series, errors="coerce")
+                    numeric = numeric.dropna()
+                    if numeric.empty:
+                        continue
+                    if not (numeric.round() == numeric).all():
+                        continue
+                    if not numeric.between(1900, 2100).all():
+                        continue
+                    display_df[col] = (
+                        pd.to_numeric(display_df[col], errors="coerce")
+                        .round()
+                        .astype("Int64")
+                        .astype(str)
+                    )
                 st.write("")
-                st.dataframe(result_df, use_container_width=True)
+                st.dataframe(display_df, use_container_width=True)
 
 with tabs[2]:
     st.subheader("Change in Disaster Types Over Time")
@@ -1106,16 +1179,56 @@ with tabs[2]:
 
 with tabs[3]:
     st.subheader("Annual Disaster Themes")
+    if st.session_state.get("show_bump_llm_modal"):
+        st.session_state["show_bump_llm_modal"] = False
     filter_col, content_col = st.columns([1, 4])
     with filter_col:
-        st.subheader("Filters")
-        _render_data_range_note()
         min_year = 2000
         max_year = dt.date.today().year
         if min_available_date is not None:
             min_year = pd.to_datetime(min_available_date).year
         if max_available_date is not None:
             max_year = pd.to_datetime(max_available_date).year
+        default_sankey = {"Fire", "Flood", "Hurricane"}
+        for dtype in type_options:
+            key = f"filters_sankey_type_{dtype}"
+            if key not in st.session_state:
+                st.session_state[key] = dtype in default_sankey
+        sankey_types = [
+            dtype for dtype in type_options if st.session_state.get(f"filters_sankey_type_{dtype}")
+        ]
+        if not sankey_types:
+            sankey_types = None
+        with st.expander("Cache status by year"):
+            status_start = dt.date(min_year, 1, 1)
+            status_end = dt.date(max_year + 1, 1, 1)
+            status_result = get_sankey_cache_status_by_year(
+                status_start.isoformat(),
+                status_end.isoformat(),
+                sankey_types,
+            )
+            if status_result.df.empty:
+                st.caption("No cache status data available.")
+            else:
+                status_df = status_result.df.copy()
+                status_df["year"] = pd.to_datetime(status_df["year_bucket"]).dt.year.astype(int)
+                status_df["cached_entries"] = (
+                    pd.to_numeric(status_df.get("cached_entries"), errors="coerce").fillna(0).astype(int)
+                )
+                status_df["total_entries"] = (
+                    pd.to_numeric(status_df.get("total_entries"), errors="coerce").fillna(0).astype(int)
+                )
+                status_df["uncached_entries"] = (
+                    status_df["total_entries"] - status_df["cached_entries"]
+                ).clip(lower=0)
+                for row in status_df.sort_values("year", ascending=False).itertuples(index=False):
+                    st.caption(
+                        f"{row.year}: {row.cached_entries} cached / {row.uncached_entries} uncached"
+                    )
+
+    with filter_col:
+        st.subheader("Filters")
+        _render_data_range_note()
         year_options = list(range(min_year, max_year + 1))
         default_year = 2024 if 2024 in year_options else max_year
         sankey_year = st.selectbox(
@@ -1124,12 +1237,6 @@ with tabs[3]:
             index=year_options.index(default_year),
             key="filters_sankey_year",
         )
-        default_sankey = {"Fire", "Flood", "Hurricane"}
-        for dtype in type_options:
-            key = f"filters_sankey_type_{dtype}"
-            if key not in st.session_state:
-                st.session_state[key] = dtype in default_sankey
-
         select_col, deselect_col = st.columns(2)
         with select_col:
             if st.button("Select all", key="filters_sankey_select_all"):
@@ -1181,12 +1288,32 @@ with tabs[4]:
         pending_category = st.session_state.pop("sunburst_pending_category", None)
         focus_category = st.session_state.get("sunburst_focus_category")
         focus_year = st.session_state.get("sunburst_focus_year")
+        effective_years = sunburst_years
+        if focus_year:
+            effective_years = (int(focus_year), int(focus_year))
+        sunburst_start_preview, sunburst_end_preview = _year_range_to_dates(effective_years)
+        type_count_result = get_sunburst_rows(
+            sunburst_start_preview.isoformat(),
+            sunburst_end_preview.isoformat(),
+            None,
+        )
+        type_counts = {}
+        if not type_count_result.df.empty:
+            count_df = type_count_result.df.copy()
+            count_df["county_count"] = pd.to_numeric(
+                count_df.get("county_count"), errors="coerce"
+            ).fillna(0)
+            type_counts = (
+                count_df.groupby("disaster_type")["county_count"].sum().to_dict()
+            )
         for dtype in type_options:
             key = f"filters_sunburst_type_{dtype}"
             if key not in st.session_state:
                 st.session_state[key] = dtype in default_sunburst
-            elif pending_category is not None:
+            elif pending_category is not None and not focus_category:
                 st.session_state[key] = dtype == pending_category
+            elif focus_category and dtype == focus_category and not st.session_state.get(key, False):
+                st.session_state[key] = True
         select_col, deselect_col = st.columns(2)
         with select_col:
             if st.button("Select all", key="filters_sunburst_select_all", disabled=bool(focus_category)):
@@ -1198,17 +1325,20 @@ with tabs[4]:
                     st.session_state[f"filters_sunburst_type_{dtype}"] = False
         sunburst_types = []
         for dtype in type_options:
+            total_count = int(type_counts.get(dtype, 0))
             checked = st.checkbox(
-                dtype,
+                f"{dtype} ({total_count})",
                 key=f"filters_sunburst_type_{dtype}",
                 disabled=bool(focus_category),
             )
             if checked:
                 sunburst_types.append(dtype)
-        if not sunburst_types:
+        no_sunburst_selection = not sunburst_types
+        if no_sunburst_selection:
             sunburst_types = None
         if focus_category:
             sunburst_types = [focus_category]
+            no_sunburst_selection = False
         if focus_year:
             sunburst_years = (int(focus_year), int(focus_year))
 
@@ -1218,12 +1348,17 @@ with tabs[4]:
             st.session_state["sunburst_reset_key"] = st.session_state.get("sunburst_reset_key", 0) + 1
             st.session_state.pop("sunburst_selected_node", None)
         sunburst_start, sunburst_end = _year_range_to_dates(sunburst_years)
-        sunburst_result = get_sunburst_rows(
-            sunburst_start.isoformat(),
-            sunburst_end.isoformat(),
-            sunburst_types,
-        )
-        if sunburst_result.df.empty:
+        if no_sunburst_selection:
+            st.info("No data selected. Choose one or more disaster types to view results.")
+            sunburst_result = None
+        else:
+            sunburst_result = get_sunburst_rows(
+                sunburst_start.isoformat(),
+                sunburst_end.isoformat(),
+                sunburst_types,
+            )
+        render_sunburst = sunburst_result is not None and not sunburst_result.df.empty
+        if sunburst_result is None or sunburst_result.df.empty:
             st.info("No named event data available for the selected filters.")
         else:
             df = sunburst_result.df.copy()
@@ -1367,224 +1502,225 @@ with tabs[4]:
             st.session_state["sunburst_year_color_map"] = year_color_map
             st.session_state["sunburst_year_color_index"] = year_color_index
             year_color_items = tuple((year, year_color_map[year]) for year in unique_years)
-        nodes_df = _build_sunburst_nodes(df, year_color_items)
-        st.session_state["sunburst_nodes_df"] = nodes_df
-        selected_node = st.session_state.get("sunburst_selected_node")
-        breadcrumb_parts = ["Named Events"]
-        if isinstance(selected_node, dict):
-            if selected_node.get("category"):
-                breadcrumb_parts.append(str(selected_node["category"]))
-            if selected_node.get("year"):
-                breadcrumb_parts.append(str(selected_node["year"]))
-            if selected_node.get("event"):
-                breadcrumb_parts.append(str(selected_node["event"]))
-            if selected_node.get("state"):
-                breadcrumb_parts.append(str(selected_node["state"]))
-        if len(breadcrumb_parts) > 1:
-            st.caption(" > ".join(breadcrumb_parts))
-        filtered_nodes = nodes_df
-        selected_id = None
-        if isinstance(selected_node, dict):
-            node_type = selected_node.get("node_type")
-            category = selected_node.get("category")
-            year = selected_node.get("year")
-            event_name = selected_node.get("event")
-            state = selected_node.get("state")
-            if node_type == "category" and category:
-                selected_id = f"category:{category}"
-            elif node_type == "year" and category and year:
-                selected_id = f"category:{category}|year:{year}"
-            elif node_type == "event" and category and year and event_name:
-                selected_id = f"category:{category}|year:{year}|event:{event_name}"
-            elif node_type == "state" and category and year and event_name and state:
-                selected_id = (
-                    f"category:{category}|year:{year}|event:{event_name}|state:{state}"
-                )
-
-        focus_on_selection = bool(selected_id)
-
-        if selected_id and focus_on_selection:
-            filtered_nodes = nodes_df[
-                (nodes_df["id"] == selected_id)
-                | (nodes_df["id"].str.startswith(f"{selected_id}|"))
-            ]
-            filtered_nodes = filtered_nodes.copy()
-            subtree_ids = set(filtered_nodes["id"].tolist())
-            filtered_nodes["parent"] = filtered_nodes["parent"].apply(
-                lambda parent: parent if parent in subtree_ids else ""
-            )
-        if focus_on_selection and len(filtered_nodes) < len(nodes_df):
-            nodes_map = {
-                row["id"]: {
-                    "id": row["id"],
-                    "parent": row["parent"],
-                    "value": row["value"],
-                }
-                for row in filtered_nodes.to_dict(orient="records")
-            }
-            children_map: dict[str, list[str]] = {}
-            for node_id, node in nodes_map.items():
-                parent_id = node["parent"]
-                if parent_id:
-                    children_map.setdefault(parent_id, []).append(node_id)
-
-            def _sum_node(node_id: str) -> int:
-                children = children_map.get(node_id)
-                if not children:
-                    return int(nodes_map[node_id]["value"])
-                total = 0
-                for child_id in children:
-                    total += _sum_node(child_id)
-                nodes_map[node_id]["value"] = total
-                return total
-
-            for node_id in list(nodes_map.keys()):
-                _sum_node(node_id)
-            filtered_nodes = filtered_nodes.copy()
-            filtered_nodes["value"] = filtered_nodes["id"].map(
-                lambda value: nodes_map.get(value, {}).get("value", 0)
-            )
-        st.session_state["sunburst_filtered_nodes_df"] = filtered_nodes
-        sunburst_col, narrative_col = st.columns([3, 2], gap="large")
-        with sunburst_col:
-            chart_container = st.empty()
-            sunburst_fig = build_sunburst(filtered_nodes)
-            sunburst_fig.update_layout(
-                height=780,
-                margin={"r": 0, "t": 0, "l": 0, "b": 40},
-                paper_bgcolor="#ffffff",
-                plot_bgcolor="#ffffff",
-            )
-            reset_key = st.session_state.get("sunburst_reset_key", 0)
-            event_nonce = st.session_state.get("sunburst_event_nonce", 0)
-            with chart_container:
-                sunburst_events = plotly_events(
-                    sunburst_fig,
-                    click_event=True,
-                    select_event=False,
-                    hover_event=False,
-                    override_height=780,
-                    key=f"sunburst_{reset_key}_{event_nonce}",
-                )
-            if sunburst_events:
-                event = sunburst_events[0]
-                cd = event.get("customdata") if isinstance(event, dict) else None
-                if cd is None and isinstance(event, dict) and "pointNumber" in event:
-                    filtered_df = st.session_state.get("sunburst_filtered_nodes_df")
-                    if isinstance(filtered_df, pd.DataFrame):
-                        idx = int(event["pointNumber"])
-                        if 0 <= idx < len(filtered_df):
-                            cd = filtered_df.iloc[idx]["customdata"]
-                if isinstance(cd, dict):
-                    selected_category = cd.get("category")
-                    selected_year = cd.get("year")
-                    click_key = (
-                        f"{cd.get('node_type')}|{cd.get('category')}|"
-                        f"{cd.get('year')}|{cd.get('event')}|{cd.get('state')}"
+        if render_sunburst:
+                nodes_df = _build_sunburst_nodes(df, year_color_items)
+                st.session_state["sunburst_nodes_df"] = nodes_df
+                selected_node = st.session_state.get("sunburst_selected_node")
+                breadcrumb_parts = ["Named Events"]
+                if isinstance(selected_node, dict):
+                    if selected_node.get("category"):
+                        breadcrumb_parts.append(str(selected_node["category"]))
+                    if selected_node.get("year"):
+                        breadcrumb_parts.append(str(selected_node["year"]))
+                    if selected_node.get("event"):
+                        breadcrumb_parts.append(str(selected_node["event"]))
+                    if selected_node.get("state"):
+                        breadcrumb_parts.append(str(selected_node["state"]))
+                if len(breadcrumb_parts) > 1:
+                    st.caption(" > ".join(breadcrumb_parts))
+                filtered_nodes = nodes_df
+                selected_id = None
+                if isinstance(selected_node, dict):
+                    node_type = selected_node.get("node_type")
+                    category = selected_node.get("category")
+                    year = selected_node.get("year")
+                    event_name = selected_node.get("event")
+                    state = selected_node.get("state")
+                    if node_type == "category" and category:
+                        selected_id = f"category:{category}"
+                    elif node_type == "year" and category and year:
+                        selected_id = f"category:{category}|year:{year}"
+                    elif node_type == "event" and category and year and event_name:
+                        selected_id = f"category:{category}|year:{year}|event:{event_name}"
+                    elif node_type == "state" and category and year and event_name and state:
+                        selected_id = (
+                            f"category:{category}|year:{year}|event:{event_name}|state:{state}"
+                        )
+        
+                focus_on_selection = bool(selected_id)
+        
+                if selected_id and focus_on_selection:
+                    filtered_nodes = nodes_df[
+                        (nodes_df["id"] == selected_id)
+                        | (nodes_df["id"].str.startswith(f"{selected_id}|"))
+                    ]
+                    filtered_nodes = filtered_nodes.copy()
+                    subtree_ids = set(filtered_nodes["id"].tolist())
+                    filtered_nodes["parent"] = filtered_nodes["parent"].apply(
+                        lambda parent: parent if parent in subtree_ids else ""
                     )
-                    last_click = st.session_state.get("sunburst_last_click_key")
-                    if click_key != last_click:
-                        if selected_category:
-                            st.session_state["sunburst_focus_category"] = selected_category
-                        if selected_year:
-                            st.session_state["sunburst_focus_year"] = selected_year
-                    if click_key != last_click:
-                        st.session_state["sunburst_selected_node"] = cd
-                        st.session_state["sunburst_last_click_key"] = click_key
-                        st.session_state["sunburst_event_nonce"] = (
-                            st.session_state.get("sunburst_event_nonce", 0) + 1
+                if focus_on_selection and len(filtered_nodes) < len(nodes_df):
+                    nodes_map = {
+                        row["id"]: {
+                            "id": row["id"],
+                            "parent": row["parent"],
+                            "value": row["value"],
+                        }
+                        for row in filtered_nodes.to_dict(orient="records")
+                    }
+                    children_map: dict[str, list[str]] = {}
+                    for node_id, node in nodes_map.items():
+                        parent_id = node["parent"]
+                        if parent_id:
+                            children_map.setdefault(parent_id, []).append(node_id)
+        
+                    def _sum_node(node_id: str) -> int:
+                        children = children_map.get(node_id)
+                        if not children:
+                            return int(nodes_map[node_id]["value"])
+                        total = 0
+                        for child_id in children:
+                            total += _sum_node(child_id)
+                        nodes_map[node_id]["value"] = total
+                        return total
+        
+                    for node_id in list(nodes_map.keys()):
+                        _sum_node(node_id)
+                    filtered_nodes = filtered_nodes.copy()
+                    filtered_nodes["value"] = filtered_nodes["id"].map(
+                        lambda value: nodes_map.get(value, {}).get("value", 0)
+                    )
+                st.session_state["sunburst_filtered_nodes_df"] = filtered_nodes
+                sunburst_col, narrative_col = st.columns([3, 2], gap="large")
+                with sunburst_col:
+                    chart_container = st.empty()
+                    sunburst_fig = build_sunburst(filtered_nodes)
+                    sunburst_fig.update_layout(
+                        height=780,
+                        margin={"r": 0, "t": 0, "l": 0, "b": 40},
+                        paper_bgcolor="#ffffff",
+                        plot_bgcolor="#ffffff",
+                    )
+                    reset_key = st.session_state.get("sunburst_reset_key", 0)
+                    event_nonce = st.session_state.get("sunburst_event_nonce", 0)
+                    with chart_container:
+                        sunburst_events = plotly_events(
+                            sunburst_fig,
+                            click_event=True,
+                            select_event=False,
+                            hover_event=False,
+                            override_height=780,
+                            key=f"sunburst_{reset_key}_{event_nonce}",
                         )
-                        chart_container.empty()
-                        st.rerun()
-                        # No forced rerun; let Streamlit update naturally.
-
-        with narrative_col:
-            st.subheader("Impact Assessment")
-            selected_node = st.session_state.get("sunburst_selected_node")
-            if not selected_node:
-                st.caption("Click a year, named event, or state to see a narrative summary.")
-            else:
-                st.caption("Click the button below to open the narrative.")
-                if st.button("Open Impact Assessment", key="sunburst_open_modal"):
-                    st.session_state["sunburst_show_modal"] = True
-
-        selected_node = st.session_state.get("sunburst_selected_node")
-        if selected_node and st.session_state.get("sunburst_show_modal"):
-            @st.dialog("Impact Assessment")
-            def _show_impact_assessment():
-                cache = st.session_state.setdefault("sunburst_summary_cache", {})
-                node_type = selected_node.get("node_type")
-                year_str = selected_node.get("year")
-                year_int = int(year_str) if year_str and str(year_str).isdigit() else None
-                event_name = selected_node.get("event")
-                state = selected_node.get("state")
-
-                if node_type == "year" and year_int is not None:
-                    cache_key = f"sunburst:year:{year_int}"
-                    if cache_key not in cache:
-                        year_df = df[df["year"] == str(year_int)]
-                        top_types = year_df["disaster_type"].value_counts().head(8).items()
-                        top_events = (
-                            year_df[year_df["event"] != "Other/Unnamed"]["event"]
-                            .value_counts()
-                            .head(8)
-                            .items()
-                        )
-                        with st.spinner("Summarizing year events..."):
-                            cache[cache_key] = summarize_year_events(
-                                year_int,
-                                top_types,
-                                top_events,
+                    if sunburst_events:
+                        event = sunburst_events[0]
+                        cd = event.get("customdata") if isinstance(event, dict) else None
+                        if cd is None and isinstance(event, dict) and "pointNumber" in event:
+                            filtered_df = st.session_state.get("sunburst_filtered_nodes_df")
+                            if isinstance(filtered_df, pd.DataFrame):
+                                idx = int(event["pointNumber"])
+                                if 0 <= idx < len(filtered_df):
+                                    cd = filtered_df.iloc[idx]["customdata"]
+                        if isinstance(cd, dict):
+                            selected_category = cd.get("category")
+                            selected_year = cd.get("year")
+                            click_key = (
+                                f"{cd.get('node_type')}|{cd.get('category')}|"
+                                f"{cd.get('year')}|{cd.get('event')}|{cd.get('state')}"
                             )
-                    st.write(cache[cache_key])
-
-                elif node_type == "event" and year_int is not None:
-                    if event_name == "Other/Unnamed":
-                        cache_key = f"sunburst:unnamed:{year_int}"
-                        if cache_key not in cache:
-                            unnamed_df = df[(df["year"] == str(year_int)) & (df["event"] == "Other/Unnamed")]
-                            top_types = unnamed_df["disaster_type"].value_counts().head(8).items()
-                            with st.spinner("Summarizing unnamed events..."):
-                                cache[cache_key] = summarize_unnamed_events(year_int, top_types)
-                        st.write(cache[cache_key])
-                    else:
-                        cache_key = f"sunburst:event:{year_int}:{event_name}"
-                        if cache_key not in cache:
-                            event_df = df[(df["year"] == str(year_int)) & (df["event"] == event_name)]
-                            top_states = event_df["state"].value_counts().head(8).items()
-                            with st.spinner("Summarizing named event..."):
-                                cache[cache_key] = summarize_named_event(
-                                    event_name,
-                                    year_int,
-                                    top_states,
+                            last_click = st.session_state.get("sunburst_last_click_key")
+                            if click_key != last_click:
+                                if selected_category:
+                                    st.session_state["sunburst_focus_category"] = selected_category
+                                if selected_year:
+                                    st.session_state["sunburst_focus_year"] = selected_year
+                            if click_key != last_click:
+                                st.session_state["sunburst_selected_node"] = cd
+                                st.session_state["sunburst_last_click_key"] = click_key
+                                st.session_state["sunburst_event_nonce"] = (
+                                    st.session_state.get("sunburst_event_nonce", 0) + 1
                                 )
-                        st.write(cache[cache_key])
-
-                elif node_type == "state" and year_int is not None and event_name:
-                    if event_name == "Other/Unnamed":
-                        cache_key = f"sunburst:unnamed:{year_int}"
-                        if cache_key not in cache:
-                            unnamed_df = df[(df["year"] == str(year_int)) & (df["event"] == "Other/Unnamed")]
-                            top_types = unnamed_df["disaster_type"].value_counts().head(8).items()
-                            with st.spinner("Summarizing unnamed events..."):
-                                cache[cache_key] = summarize_unnamed_events(year_int, top_types)
-                        st.write(cache[cache_key])
+                                chart_container.empty()
+                                st.rerun()
+                                # No forced rerun; let Streamlit update naturally.
+        
+                with narrative_col:
+                    st.subheader("Impact Assessment")
+                    selected_node = st.session_state.get("sunburst_selected_node")
+                    if not selected_node:
+                        st.caption("Click a year, named event, or state to see a narrative summary.")
                     else:
-                        cache_key = f"sunburst:state:{year_int}:{event_name}:{state}"
-                        if cache_key not in cache:
-                            with st.spinner("Summarizing event in state..."):
-                                cache[cache_key] = summarize_event_state(
-                                    event_name,
-                                    state,
-                                    year_int,
+                        st.caption("Click the button below to open the narrative.")
+                        if st.button("Open Impact Assessment", key="sunburst_open_modal"):
+                            st.session_state["sunburst_show_modal"] = True
+        
+                selected_node = st.session_state.get("sunburst_selected_node")
+                if selected_node and st.session_state.get("sunburst_show_modal"):
+                    @st.dialog("Impact Assessment")
+                    def _show_impact_assessment():
+                        cache = st.session_state.setdefault("sunburst_summary_cache", {})
+                        node_type = selected_node.get("node_type")
+                        year_str = selected_node.get("year")
+                        year_int = int(year_str) if year_str and str(year_str).isdigit() else None
+                        event_name = selected_node.get("event")
+                        state = selected_node.get("state")
+        
+                        if node_type == "year" and year_int is not None:
+                            cache_key = f"sunburst:year:{year_int}"
+                            if cache_key not in cache:
+                                year_df = df[df["year"] == str(year_int)]
+                                top_types = year_df["disaster_type"].value_counts().head(8).items()
+                                top_events = (
+                                    year_df[year_df["event"] != "Other/Unnamed"]["event"]
+                                    .value_counts()
+                                    .head(8)
+                                    .items()
                                 )
-                        st.write(cache[cache_key])
-                else:
-                    st.caption("Select a year or named event to see a summary.")
-
-            _show_impact_assessment()
-            st.session_state["sunburst_show_modal"] = False
-
+                                with st.spinner("Summarizing year events..."):
+                                    cache[cache_key] = summarize_year_events(
+                                        year_int,
+                                        top_types,
+                                        top_events,
+                                    )
+                            st.write(cache[cache_key])
+        
+                        elif node_type == "event" and year_int is not None:
+                            if event_name == "Other/Unnamed":
+                                cache_key = f"sunburst:unnamed:{year_int}"
+                                if cache_key not in cache:
+                                    unnamed_df = df[(df["year"] == str(year_int)) & (df["event"] == "Other/Unnamed")]
+                                    top_types = unnamed_df["disaster_type"].value_counts().head(8).items()
+                                    with st.spinner("Summarizing unnamed events..."):
+                                        cache[cache_key] = summarize_unnamed_events(year_int, top_types)
+                                st.write(cache[cache_key])
+                            else:
+                                cache_key = f"sunburst:event:{year_int}:{event_name}"
+                                if cache_key not in cache:
+                                    event_df = df[(df["year"] == str(year_int)) & (df["event"] == event_name)]
+                                    top_states = event_df["state"].value_counts().head(8).items()
+                                    with st.spinner("Summarizing named event..."):
+                                        cache[cache_key] = summarize_named_event(
+                                            event_name,
+                                            year_int,
+                                            top_states,
+                                        )
+                                st.write(cache[cache_key])
+        
+                        elif node_type == "state" and year_int is not None and event_name:
+                            if event_name == "Other/Unnamed":
+                                cache_key = f"sunburst:unnamed:{year_int}"
+                                if cache_key not in cache:
+                                    unnamed_df = df[(df["year"] == str(year_int)) & (df["event"] == "Other/Unnamed")]
+                                    top_types = unnamed_df["disaster_type"].value_counts().head(8).items()
+                                    with st.spinner("Summarizing unnamed events..."):
+                                        cache[cache_key] = summarize_unnamed_events(year_int, top_types)
+                                st.write(cache[cache_key])
+                            else:
+                                cache_key = f"sunburst:state:{year_int}:{event_name}:{state}"
+                                if cache_key not in cache:
+                                    with st.spinner("Summarizing event in state..."):
+                                        cache[cache_key] = summarize_event_state(
+                                            event_name,
+                                            state,
+                                            year_int,
+                                        )
+                                st.write(cache[cache_key])
+                        else:
+                            st.caption("Select a year or named event to see a summary.")
+        
+                    _show_impact_assessment()
+                    st.session_state["sunburst_show_modal"] = False
+        
 with tabs[5]:
     filter_col, content_col = st.columns([1, 4])
     with filter_col:

@@ -168,10 +168,10 @@ def get_distinct_disaster_types() -> QueryResult:
 def get_disaster_date_bounds() -> QueryResult:
     sql = """
         SELECT
-          MIN(disaster_declaration_date) AS min_date,
-          MAX(disaster_declaration_date) AS max_date
+          MIN(COALESCE(disaster_declaration_date, disaster_begin_date, disaster_end_date)) AS min_date,
+          MAX(COALESCE(disaster_declaration_date, disaster_begin_date, disaster_end_date)) AS max_date
         FROM ANALYTICS.SILVER.FCT_DISASTERS
-        WHERE disaster_declaration_date IS NOT NULL
+        WHERE COALESCE(disaster_declaration_date, disaster_begin_date, disaster_end_date) IS NOT NULL
     """
     return fetch_df(sql)
 
@@ -341,8 +341,10 @@ def get_state_choropleth(
           state AS state,
           COUNT(*) AS disaster_count
         FROM ANALYTICS.SILVER.FCT_DISASTERS
-        WHERE disaster_declaration_date >= %(start_date)s
-          AND disaster_declaration_date < %(end_date)s
+        WHERE COALESCE(disaster_declaration_date, disaster_begin_date, disaster_end_date)
+          >= %(start_date)s
+          AND COALESCE(disaster_declaration_date, disaster_begin_date, disaster_end_date)
+          < %(end_date)s
           {type_clause}
         GROUP BY state
     """.format(type_clause=type_clause)
@@ -356,12 +358,13 @@ def get_cube_summary(
     grain: str,
     disaster_types: Optional[list[str]] = None,
 ) -> QueryResult:
+    effective_date = "COALESCE(disaster_declaration_date, disaster_begin_date, disaster_end_date)"
     if grain == "year":
-        bucket_expr = "DATE_TRUNC('year', disaster_declaration_date)"
+        bucket_expr = f"DATE_TRUNC('year', {effective_date})"
     elif grain == "month":
-        bucket_expr = "DATE_TRUNC('month', disaster_declaration_date)"
+        bucket_expr = f"DATE_TRUNC('month', {effective_date})"
     else:
-        bucket_expr = "DATE_TRUNC('week', disaster_declaration_date)"
+        bucket_expr = f"DATE_TRUNC('week', {effective_date})"
 
     type_clause, type_params = _in_clause("dtype", disaster_types)
     params: Dict[str, Any] = {
@@ -378,8 +381,8 @@ def get_cube_summary(
           COUNT(*) AS disaster_count
         FROM ANALYTICS.SILVER.FCT_DISASTERS
         WHERE state = %(state)s
-          AND disaster_declaration_date >= %(start_date)s
-          AND disaster_declaration_date < %(end_date)s
+          AND {effective_date} >= %(start_date)s
+          AND {effective_date} < %(end_date)s
           {type_clause}
         GROUP BY disaster_type, {bucket_expr}
     """
@@ -392,12 +395,13 @@ def get_drilldown(
     period_bucket: str,
     grain: str,
 ) -> QueryResult:
+    effective_date = "COALESCE(disaster_declaration_date, disaster_begin_date, disaster_end_date)"
     if grain == "year":
-        bucket_expr = "DATE_TRUNC('year', disaster_declaration_date)"
+        bucket_expr = f"DATE_TRUNC('year', {effective_date})"
     elif grain == "month":
-        bucket_expr = "DATE_TRUNC('month', disaster_declaration_date)"
+        bucket_expr = f"DATE_TRUNC('month', {effective_date})"
     else:
-        bucket_expr = "DATE_TRUNC('week', disaster_declaration_date)"
+        bucket_expr = f"DATE_TRUNC('week', {effective_date})"
 
     sql = f"""
         SELECT
@@ -452,6 +456,69 @@ def get_sunburst_rows(
         GROUP BY disaster_type, declaration_name, state, DATE_TRUNC('year', disaster_declaration_date)
     """.format(type_clause=type_clause)
     return fetch_df(sql, params)
+
+
+def get_sankey_cache_status_by_year(
+    start_date: str,
+    end_date: str,
+    disaster_types: Optional[list[str]] = None,
+) -> QueryResult:
+    type_clause, type_params = _in_clause("dtype", disaster_types)
+    sql = """
+        WITH base AS (
+            SELECT
+              DATE_TRUNC('year', COALESCE(disaster_declaration_date, disaster_begin_date, disaster_end_date)) AS year_bucket,
+              disaster_type AS disaster_type,
+              declaration_name AS declaration_name,
+              state AS state,
+              SHA2(
+                CONCAT(
+                  COALESCE(disaster_type, ''), '|',
+                  COALESCE(declaration_name, ''), '|',
+                  COALESCE(state, '')
+                ),
+                256
+              ) AS record_id,
+              SHA2(
+                CONCAT(
+                  COALESCE(disaster_type, ''), '|',
+                  COALESCE(declaration_name, '')
+                ),
+                256
+              ) AS source_text_hash
+            FROM ANALYTICS.SILVER.FCT_DISASTERS
+            WHERE COALESCE(disaster_declaration_date, disaster_begin_date, disaster_end_date)
+              >= %(start_date)s
+              AND COALESCE(disaster_declaration_date, disaster_begin_date, disaster_end_date)
+              < %(end_date)s
+              AND state IS NOT NULL
+              {type_clause}
+            GROUP BY
+              year_bucket,
+              disaster_type,
+              declaration_name,
+              state
+        )
+        SELECT
+          year_bucket AS year_bucket,
+          COUNT(*) AS total_entries,
+          SUM(
+            CASE
+              WHEN cache.record_id IS NOT NULL
+               AND cache.source_text_hash = base.source_text_hash
+              THEN 1 ELSE 0
+            END
+          ) AS cached_entries
+        FROM base
+        LEFT JOIN ANALYTICS.MONITORING.DISASTER_NAME_GROUPING_CACHE AS cache
+          ON cache.record_id = base.record_id
+        GROUP BY year_bucket
+        ORDER BY year_bucket
+    """.format(type_clause=type_clause)
+    return fetch_df(
+        sql,
+        {"start_date": start_date, "end_date": end_date, **type_params},
+    )
 
 
 def get_trends_bump_ranks(

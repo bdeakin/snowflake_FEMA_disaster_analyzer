@@ -785,3 +785,10 @@ Format:
     Apply aggregation to the Sunburst query so it returns county counts instead of raw rows.
   outcome: Sunburst query now aggregates by year/name/state and sums county counts.
   next: Validate Sunburst totals and performance.
+
+- timestamp: 2026-01-25 22:10
+  goal: Final documentation refresh
+  prompt: |
+    Update all markdown documentation and add an issues list for the completed project.
+  outcome: Documentation updated across the repo and issues list prepared.
+  next: Final commit and push.

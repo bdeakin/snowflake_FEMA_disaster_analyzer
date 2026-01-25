@@ -10,6 +10,7 @@
 - The request references the semantic view `ANALYTICS.SILVER.DISASTER_EXPLORER`, which defines the tables, dimensions, and time dimensions available to the assistant.
 - Cortex Analyst responds with an interpretation and the generated SQL.
 - The app executes that SQL in Snowflake and returns a preview table to the user.
+- The prompt is enriched with the active Map View context (years, disaster types, and selected state).
 
 ### REST API flow
 1. Build the request body with the user prompt and the semantic view name.
@@ -28,3 +29,4 @@
 - The assistant uses the active Snowflake connection and its REST client, so no separate API token handling is required.
 - The semantic view controls available fields and guards against unintended table access.
 - Result previews are intentionally small to keep the UI responsive and avoid large data transfers.
+- Year-like numeric columns are rendered without thousand separators for readability.

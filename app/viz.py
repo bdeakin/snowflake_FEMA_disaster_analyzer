@@ -58,6 +58,7 @@ def build_cube_grid(df: pd.DataFrame, grain: str):
         hover_data={"disaster_count": False, "period_label": False, "disaster_type": False},
         custom_data=["period_bucket", "year", "disaster_type", "disaster_count"],
     )
+    fig.update_traces(marker={"line": {"color": "#000000", "width": 1}})
     fig.update_traces(
         hovertemplate=(
             "Year: %{customdata[1]}<br>"
@@ -65,6 +66,11 @@ def build_cube_grid(df: pd.DataFrame, grain: str):
             "County-level declared disasters: %{customdata[3]}<extra></extra>"
         )
     )
+    ordered_labels = []
+    for label in df.sort_values("period_bucket")["period_label"].tolist():
+        if label not in ordered_labels:
+            ordered_labels.append(label)
+    fig.update_xaxes(type="category", categoryorder="array", categoryarray=ordered_labels)
     return fig
 
 

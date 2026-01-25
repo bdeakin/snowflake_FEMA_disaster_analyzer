@@ -1,6 +1,6 @@
 # FEMA Disasters Explorer
 
-Streamlit app that visualizes FEMA disaster data from Snowflake Public Data using a choropleth overview, cube summaries, county-centroid drilldowns, and an About tab with narrative/architecture details.
+Streamlit app that visualizes FEMA disaster data from Snowflake Public Data using a choropleth overview, cube summaries, county-centroid drilldowns, and a Cortex assistant for map questions.
 
 For the core architecture and data flow diagram, see `ARCHITECTURE.md`.
 
@@ -27,15 +27,15 @@ Required variables:
 - `SNOWFLAKE_DATABASE`
 - `SNOWFLAKE_SCHEMA`
 - `SNOWFLAKE_USER`
+Optional auth (choose one):
 - `SNOWFLAKE_PASSWORD`
+- `SNOWFLAKE_PRIVATE_KEY_B64` (unencrypted DER, base64-encoded)
 Optional (use for OCSP/certificate issues):
 - `SNOWFLAKE_OCSP_FAIL_OPEN` (true/false)
 - `SNOWFLAKE_DISABLE_OCSP_CHECKS` (true/false)
 Optional (for bump chart LLM summaries):
 - `OPENAI_API_KEY`
 - `OPENAI_MODEL` (default: `gpt-4o-mini`)
-Optional (local Cortex Analyst REST, PAT only):
-- `SNOWFLAKE_TOKEN` (PAT token)
 Note: OCSP errors were resolved by upgrading `snowflake-connector-python` to the version pinned in `requirements.txt`.
 
 ## Setup Runbook
@@ -70,7 +70,7 @@ Note: OCSP errors were resolved by upgrading `snowflake-connector-python` to the
    ```
 
 ## Cache Warming Script
-To pre-warm the Sankey cache for 2020–2025 across all types, run:
+To pre-warm the Sankey cache for all years and types, run:
 ```
 python scripts/warm_sankey_cache.py
 ```
@@ -108,6 +108,11 @@ Refresh button to reload results without triggering a run.
 The Sankey tab uses an LLM to group declaration names into named vs unnamed events. The
 results are cached in `ANALYTICS.MONITORING.DISASTER_NAME_GROUPING_CACHE` to avoid repeated
 LLM calls for the same records.
+
+## Cortex Assistant
+The Map View includes a Cortex assistant powered by the Analyst semantic view
+`ANALYTICS.SILVER.DISASTER_EXPLORER` via the Cortex Analyst REST API. It translates user
+questions into SQL and returns a result preview in the UI.
 
 To clear the cache, run one of the following in Snowflake:
 ```

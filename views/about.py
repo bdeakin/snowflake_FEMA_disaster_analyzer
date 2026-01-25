@@ -111,11 +111,13 @@ def render_about() -> None:
     st.subheader("Snowflake features highlighted")
     st.markdown(
         "- **Dynamic tables** for Silver/Gold layers with lag-based refresh semantics.\n"
-        "- **Tasks** for 12-hour consistency checks with results stored in monitoring tables."
+        "- **Tasks** for 12-hour consistency checks with results stored in monitoring tables.\n"
+        "- **Cortex Analyst** for the Map View assistant powered by a semantic view."
     )
 
     st.subheader("Integrations")
     st.markdown(
         "- **OpenAI** performs thematic grouping and impact assessment narratives.\n"
+        "- **Cortex Analyst** provides natural-language SQL for the Map View assistant.\n"
         "- **Data safety note**: summaries are derived from FEMA metadata."
     )

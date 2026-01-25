@@ -18,6 +18,7 @@ with an About tab that documents narrative, architecture, and integrations.
   `ANALYTICS.SILVER.DISASTER_EXPLORER` via the Cortex Analyst REST API.
 - **LLM Summary**: Optional OpenAI summary for bump chart drilldown selections.
 - **Sankey Cache**: LLM name grouping cache stored in `ANALYTICS.MONITORING`.
+- **Cortex Analyst**: REST-based Analyst responses with SQL previews rendered in the Map View.
 
 ## Data & UI Flow
 \n```mermaid
@@ -42,8 +43,7 @@ flowchart LR
 - Sunburst selection filters the displayed subtree to keep focus on the active event path.
 - Sunburst drilldown shows breadcrumbs and locks filters while focused.
 - Sunburst year colors are assigned from a stable, session-level map.
-- Sunburst filtering diagnostics track node subsets during drill-in.
-- Filtered sunburst totals are recomputed to keep full-circle rendering.
+- Sunburst totals are computed from aggregated county counts.
 - Sunburst selection updates trigger a rerun to apply the new subtree immediately.
 - Sunburst reset clears selection state and restarts from full hierarchy.
 - Sunburst ignores the first event after rerun to prevent unintended auto-selection.
@@ -59,3 +59,4 @@ flowchart LR
 - Development narrative is tracked in `DEVELOPMENT_NARRATIVE.md`.
 - Sankey uses a cached LLM grouping of declaration names per disaster record.
 - Sankey aggregates county counts in SQL to reduce row volume before rendering.
+- Map View uses an effective date (declaration/begin/end) to include late-reported years.
