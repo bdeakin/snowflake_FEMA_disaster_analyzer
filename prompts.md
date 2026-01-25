@@ -763,3 +763,10 @@ Format:
     Make SNOWFLAKE_PASSWORD optional when SNOWFLAKE_PRIVATE_KEY_B64 is set.
   outcome: Connection now requires password or private key, enabling MFA-safe auth.
   next: Update Streamlit secrets and redeploy.
+
+- timestamp: 2026-01-25 19:30
+  goal: Add Snowpark dependency
+  prompt: |
+    Add snowflake-snowpark-python to requirements.txt.
+  outcome: Added Snowpark dependency for Streamlit deployments.
+  next: Reinstall dependencies locally and redeploy.

@@ -22,6 +22,9 @@ intended as a high-level narrative; see `git log` for exhaustive details.
 ## v1.15
 - Snowflake connection now supports key-pair auth without requiring passwords.
 
+## v1.16
+- Added Snowpark dependency to requirements for Streamlit deployments.
+
 ## v1.9
 - Explore cube chart now uses log-scaled bubble sizes for small counts.
 - Explore drilldown resets on filter changes to keep results in sync.

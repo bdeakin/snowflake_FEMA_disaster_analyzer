@@ -64,6 +64,9 @@ the way. Counts are approximate, based on the project prompt history.
 ### LLM + News Integrations (≈4–6)
 - LLM summarization error handling and modal issues.
 
+### Dependency Updates (≈1–2)
+- Added Snowpark dependency to requirements for Streamlit deploys.
+
 ### Snowflake SQL / Stored Procedures (≈10–14)
 - SQL scripting syntax and variable binding errors.
 - Dynamic table metadata field mismatch (last_refresh_time vs last_refresh).

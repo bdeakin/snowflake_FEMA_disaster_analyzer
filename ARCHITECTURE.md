@@ -50,6 +50,7 @@ flowchart LR
 - About tab narrative is sourced from `config/app_metadata.py` for centralized edits.
 - Consistency Checker writes to `ANALYTICS.MONITORING` via a 12-hour Snowflake Task.
 - Snowflake connection supports key-pair auth for environments with MFA.
+- Streamlit deployments require Snowpark in `requirements.txt` to access active sessions.
 - Consistency Checker displays scheduled task metadata and the next scheduled run time.
 - Consistency Checker results view is refreshed on demand without triggering a run.
 - Consistency Checker failure notes record the last query error message or step name.
