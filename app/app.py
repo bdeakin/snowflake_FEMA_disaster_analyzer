@@ -70,6 +70,7 @@ try:
         get_distinct_disaster_types,
         get_drilldown,
         get_dynamic_table_metadata,
+        call_choropleth_assistant,
         get_name_grouping_cache,
         get_sankey_rows,
         get_state_choropleth,
@@ -110,6 +111,7 @@ except ImportError:
     get_distinct_disaster_types = queries.get_distinct_disaster_types
     get_drilldown = queries.get_drilldown
     get_dynamic_table_metadata = queries.get_dynamic_table_metadata
+    call_choropleth_assistant = queries.call_choropleth_assistant
     get_name_grouping_cache = queries.get_name_grouping_cache
     get_sankey_rows = queries.get_sankey_rows
     get_state_choropleth = queries.get_state_choropleth
@@ -188,9 +190,13 @@ def _render_sankey_content(
         return
 
     df = sankey_result.df.copy()
-    df["record_id"] = df["record_id"].astype(str)
-    if "county_fips" not in df.columns:
-        df["county_fips"] = ""
+    df["county_count"] = pd.to_numeric(df.get("county_count"), errors="coerce").fillna(0)
+    df["record_id"] = df.apply(
+        lambda row: hashlib.sha256(
+            f"{row['disaster_type']}|{row['declaration_name']}|{row['state']}".encode("utf-8")
+        ).hexdigest(),
+        axis=1,
+    )
     df["state"] = df["state"].fillna("Unknown").astype(str).str.strip()
     df["declaration_name"] = df["declaration_name"].fillna("").astype(str).str.strip()
     df["disaster_declaration_date"] = pd.to_datetime(df["disaster_declaration_date"])
@@ -509,7 +515,6 @@ def _render_sankey_content(
     if missing_theme.any():
         df.loc[missing_theme, "theme_group"] = "No Theme"
 
-    county_df = df[df["county_fips"].astype(str).str.strip() != ""]
     tooltip_parts = []
     for (name_group, event_name), group in df.groupby(["name_group", "event_name"]):
         tooltip_parts.append(
@@ -520,8 +525,8 @@ def _render_sankey_content(
         )
     tooltip_df = pd.DataFrame(tooltip_parts)
     tooltip_counts = (
-        county_df.groupby("name_group")["county_fips"]
-        .count()
+        df.groupby("name_group")["county_count"]
+        .sum()
         .to_dict()
     )
     event_tooltip_map = {}
@@ -535,13 +540,13 @@ def _render_sankey_content(
 
     st.caption("Flow: Theme → Event → State")
     theme_counts = (
-        county_df.groupby(["theme_group", "name_group"])["county_fips"]
-        .count()
+        df.groupby(["theme_group", "name_group"])["county_count"]
+        .sum()
         .reset_index(name="value")
     )
     state_counts = (
-        county_df.groupby(["name_group", "state"])["county_fips"]
-        .count()
+        df.groupby(["name_group", "state"])["county_count"]
+        .sum()
         .reset_index(name="value")
     )
 
@@ -660,6 +665,8 @@ with tabs[1]:
         if not explore_types:
             explore_types = None
     with content_col:
+        map_col, assistant_col = st.columns([3, 1], gap="large")
+    with map_col:
         current_filter_sig = (
             tuple(explore_years),
             tuple(sorted(explore_types)) if explore_types else None,
@@ -915,6 +922,43 @@ with tabs[1]:
                             showlegend=True,
                         )
                         st.plotly_chart(drilldown_fig, use_container_width=True)
+
+    with assistant_col:
+        st.subheader("Cortex")
+        chat_key = "choropleth_chat"
+        if chat_key not in st.session_state:
+            st.session_state[chat_key] = []
+        if st.button("Clear chat", key="choropleth_clear_chat"):
+            st.session_state[chat_key] = []
+        user_prompt = st.text_area(
+            "Ask the assistant",
+            key="choropleth_chat_input",
+            height=120,
+        )
+        if st.button("Send", key="choropleth_chat_send") and user_prompt.strip():
+            st.session_state[chat_key].append(
+                {"role": "user", "content": user_prompt.strip()}
+            )
+            try:
+                response_text, response_df = call_choropleth_assistant(user_prompt.strip())
+                if not response_text and response_df is None:
+                    response_text = "No response returned from the assistant."
+            except Exception as exc:
+                response_text = f"Assistant error: {exc}"
+                response_df = None
+            st.session_state[chat_key].append(
+                {"role": "assistant", "content": response_text, "result_df": response_df}
+            )
+            st.rerun()
+
+        for message in st.session_state[chat_key]:
+            role = message.get("role", "assistant")
+            content = message.get("content", "")
+            result_df = message.get("result_df")
+            st.markdown(f"**{role.title()}:** {content}")
+            if role == "assistant" and isinstance(result_df, pd.DataFrame):
+                st.write("")
+                st.dataframe(result_df, use_container_width=True)
 
 with tabs[2]:
     st.subheader("Change in Disaster Types Over Time")

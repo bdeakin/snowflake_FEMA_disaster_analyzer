@@ -58,6 +58,21 @@ def _resolve_plan_links() -> list[tuple[str, str]]:
 
 
 def render_about() -> None:
+    st.subheader("Snowflake features in this demo")
+    repo_root = Path(__file__).resolve().parents[1]
+    feature_docs = [
+        ("Dynamic tables narrative", repo_root / "DYNAMIC_TABLES.md"),
+        ("Tasks narrative", repo_root / "TASKS_NARRATIVE.md"),
+        ("Cortex narrative", repo_root / "CORTEX_NARRATIVE.md"),
+    ]
+    for label, path in feature_docs:
+        if path.exists():
+            text = path.read_text(encoding="utf-8")
+            with st.expander(f"View {label.lower()}"):
+                st.markdown(text)
+        else:
+            st.caption(f"{label} not found.")
+
     st.subheader("What this app is")
     st.write(
         "FEMA Disaster Explorer is a demo analytics experience that surfaces FEMA disaster "

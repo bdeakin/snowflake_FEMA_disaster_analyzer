@@ -770,3 +770,11 @@ Format:
     Add snowflake-snowpark-python to requirements.txt.
   outcome: Added Snowpark dependency for Streamlit deployments.
   next: Reinstall dependencies locally and redeploy.
+
+- timestamp: 2026-01-25 20:05
+  goal: Reduce Sankey query rows
+  prompt: |
+    Aggregate the Sankey source query by disaster type, declaration name, and state
+    with exact county counts to reduce row volume and cost.
+  outcome: Sankey query now returns aggregated county counts and rendering sums counts.
+  next: Monitor performance and validate totals.

@@ -61,6 +61,9 @@ the way. Counts are approximate, based on the project prompt history.
 - Annual Disaster Themes defaults adjusted to focus initial view.
 - Annual Disaster Themes defaults updated to 2024 with Fire, Flood, and Hurricane.
 
+### Data Volume Reduction (≈1–2)
+- Sankey query now aggregates county counts in SQL to reduce row volume and cost.
+
 ### LLM + News Integrations (≈4–6)
 - LLM summarization error handling and modal issues.
 

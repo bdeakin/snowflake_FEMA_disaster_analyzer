@@ -14,6 +14,7 @@ with an About tab that documents narrative, architecture, and integrations.
   periods, state derivation via `STATE_GEO_ID` and centroid reference).
 - **Gold Layer**: Aggregate dynamic tables used for fast queries by state and period.
 - **Streamlit App**: `app/app.py` drives UI and calls query helpers to render Plotly charts.
+- **Cortex Assistant**: Map View includes a chat pane powered by `ANALYTICS.GOLD.CHOROPLETH_ASSISTANT`.
 - **LLM Summary**: Optional OpenAI summary for bump chart drilldown selections.
 - **Sankey Cache**: LLM name grouping cache stored in `ANALYTICS.MONITORING`.
 
@@ -56,3 +57,4 @@ flowchart LR
 - Consistency Checker failure notes record the last query error message or step name.
 - Development narrative is tracked in `DEVELOPMENT_NARRATIVE.md`.
 - Sankey uses a cached LLM grouping of declaration names per disaster record.
+- Sankey aggregates county counts in SQL to reduce row volume before rendering.

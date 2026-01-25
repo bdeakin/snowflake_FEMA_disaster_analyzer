@@ -33,8 +33,15 @@ def _print_status(message: str) -> None:
 
 def _build_records(df: pd.DataFrame) -> pd.DataFrame:
     df = df.copy()
-    df["record_id"] = df["record_id"].astype(str)
+    df["state"] = df["state"].fillna("Unknown").astype(str).str.strip()
     df["declaration_name"] = df["declaration_name"].fillna("").astype(str).str.strip()
+    df["record_id"] = (
+        df["disaster_type"].astype(str)
+        + "|"
+        + df["declaration_name"].astype(str)
+        + "|"
+        + df["state"].astype(str)
+    ).map(_hash_text)
     df["disaster_declaration_date"] = pd.to_datetime(df["disaster_declaration_date"])
     df["disaster_begin_date"] = pd.to_datetime(df.get("disaster_begin_date"), errors="coerce")
     df["disaster_end_date"] = pd.to_datetime(df.get("disaster_end_date"), errors="coerce")

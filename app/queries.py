@@ -49,6 +49,99 @@ def execute_sql(sql: str, params: Optional[Dict[str, Any]] = None) -> None:
         conn.close()
 
 
+def _extract_cortex_text(response: Dict[str, Any]) -> str:
+    message = response.get("message") or response.get("data", {}).get("message")
+    if not isinstance(message, dict):
+        return ""
+    content = message.get("content") or []
+    text_chunks = [
+        block.get("text", "")
+        for block in content
+        if isinstance(block, dict) and block.get("type") == "text"
+    ]
+    text_chunks = [text for text in text_chunks if text]
+    if text_chunks:
+        return "\n\n".join(text_chunks)
+    suggestions_block = next(
+        (
+            block
+            for block in content
+            if isinstance(block, dict) and block.get("type") == "suggestions"
+        ),
+        None,
+    )
+    if suggestions_block:
+        suggestions = suggestions_block.get("suggestions") or []
+        if suggestions:
+            return "Suggestions:\n" + "\n".join(f"- {s}" for s in suggestions)
+    sql_block = next(
+        (block for block in content if isinstance(block, dict) and block.get("type") == "sql"),
+        None,
+    )
+    if sql_block and sql_block.get("statement"):
+        return f"Generated SQL:\n{sql_block['statement']}"
+    return ""
+
+
+def _extract_cortex_sql(response: Dict[str, Any]) -> str:
+    message = response.get("message") or response.get("data", {}).get("message")
+    if not isinstance(message, dict):
+        return ""
+    content = message.get("content") or []
+    sql_block = next(
+        (block for block in content if isinstance(block, dict) and block.get("type") == "sql"),
+        None,
+    )
+    if sql_block and sql_block.get("statement"):
+        return str(sql_block["statement"])
+    return ""
+
+
+def _format_df_preview(df: pd.DataFrame, max_rows: int = 10) -> str:
+    if df.empty:
+        return "No rows returned."
+    preview = df.head(max_rows).copy()
+    return preview.to_string(index=False)
+
+
+def call_choropleth_assistant(prompt: str) -> tuple[str, Optional[pd.DataFrame]]:
+    conn = get_connection()
+    try:
+        rest = getattr(conn, "rest", None)
+        if rest is None:
+            raise RuntimeError("Snowflake REST client is unavailable for Cortex Analyst.")
+        payload = {
+            "messages": [
+                {
+                    "role": "user",
+                    "content": [{"type": "text", "text": prompt}],
+                }
+            ],
+            "semantic_view": "ANALYTICS.SILVER.DISASTER_EXPLORER",
+        }
+        response = rest.request(
+            "/api/v2/cortex/analyst/message",
+            body=payload,
+            method="post",
+            client="json",
+        )
+        if isinstance(response, dict) and response.get("success") is False:
+            raise RuntimeError(response.get("message") or "Cortex Analyst request failed.")
+        response_payload = response if isinstance(response, dict) else {}
+        text = _extract_cortex_text(response_payload).strip()
+        sql = _extract_cortex_sql(response_payload).strip()
+        if sql:
+            try:
+                sql_result = fetch_df(sql)
+                result_df = sql_result.df
+            except Exception as exc:
+                result_df = pd.DataFrame({"error": [f"SQL execution failed: {exc}"]})
+            return text, result_df
+        return text, None
+    finally:
+        conn.close()
+
+
 def _in_clause(param_base: str, values: Optional[list[str]]) -> tuple[str, Dict[str, Any]]:
     if not values:
         return "", {}
@@ -92,22 +185,23 @@ def get_sankey_rows(
 ) -> QueryResult:
     type_clause, type_params = _in_clause("dtype", disaster_types)
     sql = """
-        SELECT DISTINCT
-          CAST(disaster_id AS STRING) AS record_id,
-          disaster_id AS disaster_id,
-          county_fips AS county_fips,
-          state AS state,
+        SELECT
           disaster_type AS disaster_type,
-          disaster_declaration_date AS disaster_declaration_date,
-          disaster_begin_date AS disaster_begin_date,
-          disaster_end_date AS disaster_end_date,
-          declaration_name AS declaration_name
+          declaration_name AS declaration_name,
+          state AS state,
+          COUNT(DISTINCT county_fips) AS county_count,
+          MIN(disaster_declaration_date) AS disaster_declaration_date,
+          MIN(disaster_begin_date) AS disaster_begin_date,
+          MAX(disaster_end_date) AS disaster_end_date
         FROM ANALYTICS.SILVER.FCT_DISASTERS
         WHERE COALESCE(disaster_declaration_date, disaster_begin_date, disaster_end_date)
           >= %(start_date)s
           AND COALESCE(disaster_declaration_date, disaster_begin_date, disaster_end_date)
           < %(end_date)s
+          AND state IS NOT NULL
+          AND county_fips IS NOT NULL
           {type_clause}
+        GROUP BY disaster_type, declaration_name, state
     """.format(type_clause=type_clause)
     return fetch_df(
         sql,
