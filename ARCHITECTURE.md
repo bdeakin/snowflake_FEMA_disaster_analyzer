@@ -14,7 +14,8 @@ with an About tab that documents narrative, architecture, and integrations.
   periods, state derivation via `STATE_GEO_ID` and centroid reference).
 - **Gold Layer**: Aggregate dynamic tables used for fast queries by state and period.
 - **Streamlit App**: `app/app.py` drives UI and calls query helpers to render Plotly charts.
-- **Cortex Assistant**: Map View includes a chat pane powered by `ANALYTICS.GOLD.CHOROPLETH_ASSISTANT`.
+- **Cortex Assistant**: Map View includes a chat pane powered by the Analyst semantic view
+  `ANALYTICS.SILVER.DISASTER_EXPLORER` via the Cortex Analyst REST API.
 - **LLM Summary**: Optional OpenAI summary for bump chart drilldown selections.
 - **Sankey Cache**: LLM name grouping cache stored in `ANALYTICS.MONITORING`.
 

@@ -44,6 +44,11 @@ the way. Counts are approximate, based on the project prompt history.
 - Goal: Ensure small-count disasters are visible and drilldown respects filters.
 - Outputs: Log-scaled cube bubbles and filter-driven drilldown resets.
 
+### 9) Cortex Analyst Assistant
+- Goal: Add a Cortex-powered assistant to answer map questions in natural language.
+- Outputs: REST-based Analyst integration with semantic view-backed responses and
+  result previews.
+
 
 ## Bug-Fix Narrative (By Category)
 
@@ -63,6 +68,10 @@ the way. Counts are approximate, based on the project prompt history.
 
 ### Data Volume Reduction (≈1–2)
 - Sankey query now aggregates county counts in SQL to reduce row volume and cost.
+
+### Cortex Analyst (≈2–3)
+- Added REST integration for the Cortex assistant with semantic view routing.
+- Added SQL execution + preview to surface answers beyond the interpretation text.
 
 ### LLM + News Integrations (≈4–6)
 - LLM summarization error handling and modal issues.

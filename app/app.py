@@ -1227,8 +1227,9 @@ with tabs[4]:
             st.info("No named event data available for the selected filters.")
         else:
             df = sunburst_result.df.copy()
-            df["disaster_declaration_date"] = pd.to_datetime(df["disaster_declaration_date"])
-            df["year"] = df["disaster_declaration_date"].dt.year.astype(int).astype(str)
+            df["period_bucket"] = pd.to_datetime(df["period_bucket"])
+            df["year"] = df["period_bucket"].dt.year.astype(int).astype(str)
+            df["county_count"] = pd.to_numeric(df.get("county_count"), errors="coerce").fillna(0)
             names = df["declaration_name"].fillna("").astype(str).str.strip()
             unique_names = sorted({name for name in names.tolist() if name})
             hash_input = "|".join(unique_names).encode("utf-8")
@@ -1252,8 +1253,8 @@ with tabs[4]:
                 input_df: pd.DataFrame, year_color_items: tuple[tuple[str, str], ...]
             ) -> pd.DataFrame:
                 sunburst_df = (
-                    input_df.groupby(["disaster_type", "year", "event", "state"])["county_fips"]
-                    .nunique()
+                    input_df.groupby(["disaster_type", "year", "event", "state"])["county_count"]
+                    .sum()
                     .reset_index(name="value")
                 )
                 nodes = []

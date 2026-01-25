@@ -441,14 +441,15 @@ def get_sunburst_rows(
           disaster_type AS disaster_type,
           declaration_name AS declaration_name,
           state AS state,
-          county_fips AS county_fips,
-          disaster_declaration_date AS disaster_declaration_date
+          DATE_TRUNC('year', disaster_declaration_date) AS period_bucket,
+          COUNT(DISTINCT county_fips) AS county_count
         FROM ANALYTICS.SILVER.FCT_DISASTERS
         WHERE disaster_declaration_date >= %(start_date)s
           AND disaster_declaration_date < %(end_date)s
           {type_clause}
           AND state IS NOT NULL
           AND county_fips IS NOT NULL
+        GROUP BY disaster_type, declaration_name, state, DATE_TRUNC('year', disaster_declaration_date)
     """.format(type_clause=type_clause)
     return fetch_df(sql, params)
 

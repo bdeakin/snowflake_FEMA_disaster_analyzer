@@ -28,6 +28,10 @@ intended as a high-level narrative; see `git log` for exhaustive details.
 ## v1.17
 - Sankey query aggregates county counts in SQL to reduce row volume.
 
+## v1.18
+- Sunburst query now aggregates county counts in SQL to reduce row volume.
+- Cortex assistant uses Analyst semantic view via REST with answer previews.
+
 ## v1.9
 - Explore cube chart now uses log-scaled bubble sizes for small counts.
 - Explore drilldown resets on filter changes to keep results in sync.

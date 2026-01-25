@@ -778,3 +778,10 @@ Format:
     with exact county counts to reduce row volume and cost.
   outcome: Sankey query now returns aggregated county counts and rendering sums counts.
   next: Monitor performance and validate totals.
+
+- timestamp: 2026-01-25 20:35
+  goal: Reduce Sunburst query rows
+  prompt: |
+    Apply aggregation to the Sunburst query so it returns county counts instead of raw rows.
+  outcome: Sunburst query now aggregates by year/name/state and sums county counts.
+  next: Validate Sunburst totals and performance.
