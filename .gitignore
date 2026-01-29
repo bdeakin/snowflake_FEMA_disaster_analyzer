@@ -5,3 +5,6 @@ config/secrets.env
 .DS_Store
 .cursor/
 data/county_centroids.csv
+pause_demo.sql
+resume_demo.sql
+check_status.sql

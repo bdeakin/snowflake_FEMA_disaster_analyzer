@@ -119,6 +119,16 @@ Format:
     Drilldown view uses county GeoIDs mapped to centroids from reference dataset.
     
     Repo contains all required deliverables including prompts.md, discovery SQL, pipeline SQL, and scripts.
+
+- timestamp: 2026-01-19 00:00
+  goal: Stabilize sunburst drilldown UX
+  prompt: |
+    Stabilize sunburst drilldown behavior: lock filters during drilldown,
+    add breadcrumb trail, prevent stale click replays, and keep year colors
+    stable across drilldowns while reducing repeated name grouping calls.
+  outcome: Implemented filter lock + breadcrumbs, stable year color map, and
+    incremental name grouping cache; removed debug instrumentation after fix.
+  next: Monitor drilldown behavior for any remaining rerender regressions.
     
     Application Requirements (UI and Interaction)
     Global Filter
@@ -724,71 +734,9 @@ Format:
   outcome: Added runtime debug logging around Run Now and consistency check execution
   next: Reproduce Run Now and inspect debug logs
 
-- timestamp: 2026-01-19 18:30
-  goal: Stabilize sunburst drilldown UX
+- timestamp: 2026-01-25 23:10
+  goal: Final UI polish and ops scripts
   prompt: |
-    Stabilize sunburst drilldown behavior: lock filters during drilldown,
-    add breadcrumb trail, prevent stale click replays, keep year colors
-    stable across drilldowns, and avoid repeated name grouping calls.
-  outcome: Implemented filter lock + breadcrumbs, stable year color map, and
-    incremental name grouping cache; removed debug instrumentation after fix.
-  next: Monitor drilldown behavior for any remaining rerender regressions.
-
-- timestamp: 2026-01-19 19:10
-  goal: Update About tab narrative
-  prompt: |
-    Expand the About tab development narrative and key technical challenges
-    to better explain intent and the purpose of recent functionality.
-  outcome: Expanded project phases and challenge descriptions in app metadata
-    and updated documentation references.
-  next: Refresh About tab to validate content display.
-
-- timestamp: 2026-01-20 00:15
-  goal: Default Annual Disaster Themes to Fire
-  prompt: |
-    Default the Annual Disaster Themes filter to Fire only.
-  outcome: Default selection now sets Fire and deselects other types.
-  next: Verify initial filter state in the app.
-
-- timestamp: 2026-01-20 00:25
-  goal: Update Annual Disaster Themes defaults
-  prompt: |
-    Default Annual Disaster Themes to Year 2024 and select Fire, Flood, Hurricane.
-  outcome: Default year set to 2024 and type selection updated to Fire/Flood/Hurricane.
-  next: Verify initial filter state in the app.
-
-- timestamp: 2026-01-25 19:15
-  goal: Support Snowflake key-pair auth
-  prompt: |
-    Make SNOWFLAKE_PASSWORD optional when SNOWFLAKE_PRIVATE_KEY_B64 is set.
-  outcome: Connection now requires password or private key, enabling MFA-safe auth.
-  next: Update Streamlit secrets and redeploy.
-
-- timestamp: 2026-01-25 19:30
-  goal: Add Snowpark dependency
-  prompt: |
-    Add snowflake-snowpark-python to requirements.txt.
-  outcome: Added Snowpark dependency for Streamlit deployments.
-  next: Reinstall dependencies locally and redeploy.
-
-- timestamp: 2026-01-25 20:05
-  goal: Reduce Sankey query rows
-  prompt: |
-    Aggregate the Sankey source query by disaster type, declaration name, and state
-    with exact county counts to reduce row volume and cost.
-  outcome: Sankey query now returns aggregated county counts and rendering sums counts.
-  next: Monitor performance and validate totals.
-
-- timestamp: 2026-01-25 20:35
-  goal: Reduce Sunburst query rows
-  prompt: |
-    Apply aggregation to the Sunburst query so it returns county counts instead of raw rows.
-  outcome: Sunburst query now aggregates by year/name/state and sums county counts.
-  next: Validate Sunburst totals and performance.
-
-- timestamp: 2026-01-25 22:10
-  goal: Final documentation refresh
-  prompt: |
-    Update all markdown documentation and add an issues list for the completed project.
-  outcome: Documentation updated across the repo and issues list prepared.
-  next: Final commit and push.
+    Expand the Annual Disaster Themes Sankey to fill the pane and add local pause/resume/status SQL scripts for cost control.
+  outcome: Sankey height increased; pause/resume/check_status scripts added and gitignored.
+  next: Commit and push.

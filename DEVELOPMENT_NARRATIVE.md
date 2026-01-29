@@ -99,6 +99,7 @@ the way. Counts are approximate, based on the project prompt history.
 - Temporary debug logging during investigations, later removed.
 - Removal of dead code and empty directories.
 - About tab narrative expanded to clarify intent and technical hurdles.
+- Added local pause/resume/status scripts to reduce Snowflake spend.
 
 ## Current State
 

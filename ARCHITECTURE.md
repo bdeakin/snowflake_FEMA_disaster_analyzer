@@ -60,3 +60,4 @@ flowchart LR
 - Sankey uses a cached LLM grouping of declaration names per disaster record.
 - Sankey aggregates county counts in SQL to reduce row volume before rendering.
 - Map View uses an effective date (declaration/begin/end) to include late-reported years.
+- Annual Themes Sankey is rendered via an HTML component sized to fill its pane.

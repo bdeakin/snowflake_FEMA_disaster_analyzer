@@ -38,6 +38,10 @@ intended as a high-level narrative; see `git log` for exhaustive details.
 - Disaster Impact Assessment shows per-type counts and improved empty-state handling.
 - Annual Disaster Themes adds cache status-by-year context in filters.
 
+## v1.20
+- Sankey fills the Annual Disaster Themes pane with taller rendering.
+- Added local pause/resume/status SQL scripts for cost control (gitignored).
+
 ## v1.9
 - Explore cube chart now uses log-scaled bubble sizes for small counts.
 - Explore drilldown resets on filter changes to keep results in sync.

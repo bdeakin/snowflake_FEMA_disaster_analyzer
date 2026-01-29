@@ -608,7 +608,12 @@ def _render_sankey_content(
             "or disaster type to reduce complexity."
         )
     else:
-        components.html(render_sankey(nodes, links, height=650), height=670, scrolling=True)
+        sankey_height = 900
+        components.html(
+            render_sankey(nodes, links, height=sankey_height),
+            height=sankey_height + 20,
+            scrolling=True,
+        )
 
 
 def _format_year_columns(df: pd.DataFrame) -> pd.DataFrame:
